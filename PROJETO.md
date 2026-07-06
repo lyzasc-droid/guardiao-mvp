@@ -1,0 +1,111 @@
+# PROJETO — MVP do Guardião
+
+> Cérebro do projeto. Fonte única de verdade sobre o Guardião.
+> Este arquivo é lido no início de cada sessão e atualizado ao fim dela.
+> Última atualização: 2026-07-06.
+
+---
+
+## 1. O que é o Guardião
+
+Produto de IA que ajuda a pessoa a tomar melhores decisões de compra. O foco não é o menor preço, é a qualidade da decisão: comprar quando faz sentido, esperar quando não faz, e não cair em cilada.
+
+A fundadora é solo e constrói o MVP com Claude Code. Regra guia: sempre a solução mais simples que valida a mesma hipótese.
+
+## 2. O método (3 lentes)
+
+1. Consciência de Compra → "Devo?" (necessidade x desejo, clareza, viabilidade financeira, estado emocional)
+2. Comparador → "Qual?" (opções, critérios, preço entre alternativas)
+3. Farejador de Ciladas → "É justo e seguro?" (fraude, abuso, orçamento de serviço tipo oficina)
+
+## 3. Especificação Funcional v1.0 (independente de tecnologia)
+
+- 6 dimensões: motivação, estado emocional, clareza, viabilidade, reversibilidade, risco externo.
+- Tabela de decisão única com precedência.
+- 6 vereditos: PODE COMPRAR, COMPARAR, CHECAR A OFERTA, ESFRIAR, REVER FINANÇAS, REPENSAR.
+- Princípios: memória primeiro, veredito primeiro, retorno sempre disponível.
+
+### Regras de apresentação da Consciência de Compra (marketing, não mexer sem decisão)
+- Toda análise de compra mostra os TRÊS RÓTULOS, nesta ordem: **Motivação da compra**, **Clareza**, **Viabilidade financeira**. Todo o marketing da Consciência está construído em cima desses três rótulos. As 6 dimensões da spec ficam como evolução futura, não entram agora.
+- Selo **"Não fecha ainda"** em AMARELO, no topo da resposta, aparece SÓ quando há problema (impulso, aperto financeiro, oferta ou vendedor a checar, desejo que bate com prioridade declarada, falta comparar). Serve pra chamar a atenção do usuário antes de fechar.
+- NÃO existe selo de "pode fechar" nem nada verde. Quando está tudo certo, não aparece selo nenhum, vai direto pros três rótulos.
+
+## 4. Diferencial central
+
+Memória persistente. Os 3 GPTs originais da ChatGPT eram stateless. Sem memória, o produto é indistinguível do ChatGPT cru. Persistência é o objetivo do MVP e o real diferencial (DP-002 do Product Book).
+
+## 5. Estado atual do MVP
+
+Scaffold em `meus-produtos/guardiao-mvp/`, dentro do fluxo-criativo. Essa pasta é local e ignorada pelo git da mentoria: não é enviada pro repositório e não é tocada pelas atualizações da mentoria.
+- Stack: Python + Streamlit + SQLite (memória em `guardiao.db`) + Anthropic SDK com tool use (`salvar_memoria`).
+- Entrada por voz: microfone via `streamlit-mic-recorder` (a pessoa fala ou digita antes de comprar).
+- Modelo padrão `claude-opus-4-8` (env `GUARDIAO_MODELO` troca por sonnet).
+- Arquivos principais: `app.py`, `guardiao/metodo.py` (system prompt = método v1), `guardiao/memoria.py`, `guardiao/cerebro.py`.
+- Roda com `streamlit run app.py` após `pip install -r requirements.txt` e chave `ANTHROPIC_API_KEY` no `.env`.
+- Memória testada, persiste entre sessões.
+
+## 6. Roadmap
+
+- Dia 1 (feito): scaffold + memória persistente funcionando.
+- Dia 2 (feito): 3 lentes afiadas + detecção de duplicata. Ver seção 9 para detalhes de implementação.
+- Dia 3 (feito): onboarding + follow-up pós-compra. Ver seção 9 para detalhes de implementação.
+- Dia 4: PWA + deploy. Deploy da fundadora é Vercel.
+
+## 7. Decisões abertas (da fundadora)
+
+1. Monetização: assinatura x comissão de afiliado. Recomendação: assinatura, para preservar o posicionamento de confiança.
+2. Escopo do Farejador no MVP. Recomendação: versão só com sinais visíveis.
+
+## 8. Benchmark de concorrentes
+
+Detalhes completos em `benchmark/benchmark-concorrentes.md`. Resumo:
+- Concorrente pago em teste: R$ 49/mês, R$ 319/ano (promo). Onboarding: tela "me conhecer" → "quem sou eu" → tela de hábitos.
+
+## 9. Histórico de decisões e aprendizados
+
+- 2026-07-04: definido que a fonte única do projeto é a pasta do produto, trabalhada pelo Claude Code. O Project do claude.ai, se usado, é só espelho manual.
+- 2026-07-04: o app foi movido de `~/guardiao-mvp` para `meus-produtos/guardiao-mvp/` dentro do fluxo-criativo, pra ficar junto dos produtos da mentoria e ter acesso aos agentes. A venv foi recriada no novo local (Python 3.14, Streamlit 1.58, Anthropic 0.116).
+- 2026-07-04: entrada por voz adicionada ao app (microfone). Faltava o pacote `streamlit-mic-recorder`, que quebrava a abertura. Pacote instalado na venv e registrado no `requirements.txt`. App voltou a rodar.
+- 2026-07-04: os três rótulos da Consciência de Compra (Motivação da compra, Clareza, Viabilidade financeira) tinham sido escondidos quando os 3 GPTs viraram um assistente só. A fundadora apontou que todo o marketing está em cima deles. Rótulos trazidos de volta ao formato de resposta (`metodo.py`). Combinado registrado na seção 3.
+- 2026-07-04: combinado do selo amarelo "Não fecha ainda" (que só vivia numa conversa antiga e nunca tinha sido salvo) recuperado e implementado. Aparece em amarelo no topo só quando há problema; sem selo verde de "pode fechar". Render em amarelo feito no `app.py` (função `mostrar_resposta`).
+- 2026-07-04: microfone reposicionado para dentro da própria barra de escrita, colado à esquerda do botão de enviar (efeito "ChatGPT", sem caixa nem borda própria). Implementado com `streamlit.components.v1.html` medindo a posição real do botão de enviar via JS e ajustando o microfone ao lado, com CSS injetado no iframe do `streamlit_mic_recorder` pra remover fundo e borda. Testado em mobile, desktop grande e tela padrão.
+- 2026-07-04: separado o que persiste na tela do que persiste na memória. A tela agora abre LIMPA a cada uso (conversa nova), o rolo de mensagens antigas não aparece mais para o usuário. A continuidade vem da memória persistente (documento por trás), não do histórico visível. Implementado com marco de início de sessão (`mem.ultimo_id` + parâmetro `desde_id` em `ler_mensagens`, `cerebro.responder`). Quem o Guardião já conhece recebe um "oi de novo" curto em vez da pergunta de onboarding.
+- 2026-07-04: botão "Reiniciar análise" na barra lateral (como tinha na Consciência original). Limpa a tela e começa uma análise nova sem fechar o app, mantendo a memória intacta. Usa o mesmo marco de sessão (`sessao_desde_id`).
+- 2026-07-04: os três rótulos (Motivação da compra, Clareza, Viabilidade financeira) apareciam como um "textão" corrido, difícil de ler. A fundadora pediu para ficar visualmente claro que são três leituras distintas. Implementado no `app.py`: cada rótulo vira um cartão com borda própria, separado dos outros e da frase de ação final. O reconhecimento dos rótulos é feito no app (função `_extrair_rotulos`), não depende só do modelo formatar certo. `metodo.py` também passou a exigir uma linha em branco antes da frase de ação, pra ajudar a separação.
+- 2026-07-04: a fundadora não queria chat de ida e volta sem fim. Decisão de produto: depois de cada diagnóstico, o app mostra 3 botões de decisão (Vou comprar / Vou esperar / Quero comparar antes). A pessoa clica, a decisão real dela (não só o veredito do modelo) fica registrada na memória via `mem.registrar_decisao`, e ela segue a vida. O campo de texto continua disponível se ela quiser detalhar mais, mas não é obrigatório.
+- 2026-07-04: bug encontrado (fundadora testando ao vivo): `necessidades` sempre ficava vazio, tudo caía em `desejos`, mesmo casos claros de necessidade real (ex: celular com tela quebrada). Causa: o método nunca explicava a regra de quando usar cada lista. Corrigido em `metodo.py` com critério explícito (necessidade = problema real concreto; desejo = vontade/comparação/impulso) e regra de mover de desejos pra necessidades quando a clareza chega.
+- 2026-07-04: bug mais sério encontrado no mesmo teste: uma conversa inteira (sobre um armário de escritório) não foi salva em NENHUM lugar da memória, o modelo simplesmente não chamou a ferramenta `salvar_memoria` naquele turno, apesar da instrução dizendo pra sempre salvar. Como a memória é o diferencial central do produto, isso não pode depender só do modelo lembrar. Corrigido com rede de segurança em `cerebro.py`: se a resposta trouxer um diagnóstico (os três rótulos) e o modelo não tiver chamado `salvar_memoria` naquele turno, o próprio código salva pelo menos o essencial (`_salvar_fallback_diagnostico`). A instrução em `metodo.py` também ficou mais imperativa ("obrigatório, não opcional").
+- 2026-07-04: resumo dos botões de decisão também corrigido: antes pegava a última frase digitada (podia ser só "10" ou "sim", sem contexto), agora usa o texto da "Motivação da compra" do próprio diagnóstico, que descreve o item de verdade.
+- 2026-07-04: cursor entra automaticamente no campo mais provável ao abrir a tela (nome, na tela de entrada; mensagem, na tela do chat). Implementado com `_autofoco` em `app.py`, via `components.html` medindo se algum campo já está focado antes de forçar o foco (não rouba foco se a pessoa já clicou em outro lugar).
+- 2026-07-04: a fundadora reportou que o app pedia o nome de novo toda vez, mesmo no mesmo navegador. Causa: `st.session_state` vive só na memória do servidor, se reinicia (o que acontece bastante durante ajustes de código) ou o navegador perde a conexão, esquece geral. Corrigido: o nome agora é salvo em `st.query_params` (`?usuario=nome` na URL) ao entrar. Ao abrir o app, se a URL já tiver o parâmetro, reconhece direto sem perguntar. Testado inclusive com reinício completo do servidor, funciona.
+- 2026-07-04: a lista de "necessidades" continuava vazia mesmo após a correção anterior, porque a rede de segurança (`_salvar_fallback_diagnostico`) sempre despejava tudo em "analises", sem classificar. Corrigido em `cerebro.py` com `_classificar_motivacao`: agora a própria rede de segurança decide necessidades x desejos pelo texto que o Guardião já escreveu ("necessidade" vs "desejo"/"vontade"). Migrada manualmente a entrada do armário que já estava presa em "analises" na conta real, agora aparece em "Necessidades" na barra lateral.
+- 2026-07-04: a entrada salva pela rede de segurança não dizia qual produto era (só a motivação, tipo "necessidade real, tem coisa sem lugar pra guardar", sem nome do item). Corrigido: `_salvar_fallback_diagnostico` agora junta a última fala da pessoa (que cita o produto) com a motivação. Corrigida manualmente a entrada do armário já existente na conta real, que agora mostra "Armário (falta armário pra guardar as coisas)".
+- 2026-07-04: início de exploração de design. A fundadora trouxe uma referência do Pinterest ("Genie AI Assistant App") e pediu uma tela de abertura limpa: fundo escuro, uma esfera 3D central (sem barra lateral, sem cartões, sem histórico visível), só a pergunta "O que você quer comprar hoje?". Conectado `OPENROUTER_API_KEY` no `.env` (modelo padrão `google/gemini-3.1-flash-image-preview`) para gerar a esfera como imagem de verdade (não CSS). Gerada a esfera final (azul + prateado, sem lavanda/rosa, mesma composição da referência) e salva em `meus-produtos/guardiao-mvp/assets/orb.png`.
+- 2026-07-04: implementada a tela de boas-vindas (`_tela_boas_vindas` em `app.py`): aparece sempre que a sessão está sem histórico (análise nova), com fundo preto, a esfera `assets/orb.png` centralizada e a pergunta direta. Sem barra lateral, sem cartões. Assim que a pessoa manda a primeira mensagem (voz ou texto), a tela normal do chat assume (título, barra lateral, cartões, botões de decisão). O botão "Reiniciar análise" volta pra essa tela. O script de estilização do microfone foi extraído para `_estilizar_microfone(chave_widget)`, reusado nas duas telas.
+- 2026-07-06: rodado teste completo de ponta a ponta (tela da bolha, diagnóstico com e sem problema, botões de decisão, reiniciar análise, reconhecimento por URL, classificação necessidades x desejos). Tudo funcionando, exceto um bug: quando a primeira mensagem da pessoa já chega combinada com a pergunta de "primeiro encontro" (prioridade), o aviso amarelo "Não fecha ainda" aparecia como texto solto em vez de caixa amarela, porque a detecção só olhava a primeira linha da resposta inteira. Corrigido em `mostrar_resposta` (`app.py`): agora procura o aviso em qualquer linha da resposta, não só na primeira, então funciona mesmo com saudação antes.
+- 2026-07-06: decisão de produto sobre o botão de decisão "Vou comprar". A fundadora considerou e descartou um botão "Comprei" (confirmação pós-compra): pedir pra pessoa voltar depois e confirmar manualmente não é confiável, ninguém lembra. Mantido "Vou comprar" como registro de intenção no momento da decisão, que é quando a pessoa está de fato prestando atenção. A confirmação real de que a compra aconteceu (ou não) fica pro follow-up proativo do Dia 3 do roadmap (o Guardião pergunta depois de um tempo), não pra um botão que depende da pessoa lembrar.
+- 2026-07-06: Dia 2 do roadmap implementado (3 lentes afiadas + detecção de duplicata). Antes, só a Consciência de Compra (DEVO?) tinha formato de verdade; Comparador (QUAL?) e Farejador (É SEGURO E JUSTO?) eram uma linha solta sem estrutura. Agora:
+  - Dois cartões condicionais novos (só aparecem quando fazem sentido, sempre na mesma posição: depois de Clareza, antes de Viabilidade financeira): **Comparação** (quando a pessoa cita 2+ opções concretas) e **Checagem de segurança** (quando tem link, oferta, orçamento de serviço ou vendedor envolvido). `metodo.py` ganhou os critérios e exemplos; `app.py` estendeu `ROTULOS_CONSCIENCIA` e o regex de extração pra reconhecer os 5 rótulos possíveis.
+  - Detecção de duplicata: regra explícita no método pra comparar todo item novo com o que já existe na memória (compras, desejos, necessidades, análises) e avisar em primeiro lugar quando achar parecido, antes do resto do diagnóstico.
+  - Bug encontrado e corrigido durante o teste: a resposta cortava no meio (max_tokens=700 não era mais suficiente com até 5 cartões possíveis). Aumentado pra 1200 em `cerebro.py`.
+  - Testado ao vivo: comparação entre dois notebooks, checagem de segurança de uma oficina suspeita (sem CNPJ, Pix adiantado), e detecção de duplicata (mesmo conserto de tela perguntado duas vezes). Os três cenários funcionaram corretamente.
+- 2026-07-06: tela de abertura mudou de visual. A fundadora pediu pra tirar a esfera 3D e adotar o padrão Claude/ChatGPT: saudação por horário do dia + barra de escrita centralizada verticalmente na tela (não mais fixa no rodapé). Fundo voltou a ser claro (removido o preto). Implementado em `_tela_boas_vindas` (`app.py`). A imagem `assets/orb.png` não é mais usada no app (arquivo continua salvo, caso volte a ser usada em outro lugar no futuro).
+- 2026-07-06: saudação ajustada de novo. Em vez de "Bom dia/Boa tarde/Boa noite" (por horário), a fundadora preferiu algo fixo e afetivo: "Oi, {nome}. Vamos cuidar do seu dinheiro." em fonte menor e mais suave, com "O que você quer comprar hoje?" logo abaixo, maior e em negrito. Reforça a parceria (o "vamos" junto) em vez de só marcar a hora do dia. Frase final calibrada com o nome real da fundadora (Lay) pra caber numa linha só.
+- 2026-07-06: a fundadora recuou de novo, dessa vez rejeitando o padrão Claude/ChatGPT: achou que a tela parecia genérica demais e podia fazer a pessoa se perguntar "por que não uso o Claude/ChatGPT direto". Voltamos pro fundo escuro com identidade visual própria. Ela também rejeitou a esfera 3D anterior e pediu pra usar os **tijolinhos do logo real da IAgilize** (a marca por trás do Guardião), aparecendo em sequência e se montando, representando o Guardião conhecendo a pessoa aos poucos.
+  - Como a marca já é usada no marketing e não pode variar, os blocos foram **recortados pixel a pixel do arquivo real** (`assets/logoGuardiaoBolso.png`, o arquivo tinha ficado inacessível direto do iCloud Drive por permissão do macOS, a fundadora copiou pra `assets/` manualmente). Nada foi redesenhado por IA generativa, que distorceria a marca.
+  - Análise por código (sem scipy, componentes conectados implementados na mão) revelou 5 blocos reais: 1 = quadrado laranja (topo direita), 2 = bloco em formato de L (navy), 3 = retângulo do meio (navy), 4 = quadrado inferior esquerdo (navy), 5 = barra larga inferior (navy). Confirmado com a fundadora via imagem numerada antes de implementar.
+  - Ordem de aparecimento ajustada pela fundadora pra ser de baixo pra cima e da direita pra esquerda, com o quadrado laranja sempre por último: **5 → 4 → 2 → 3 → 1** (0.4s de intervalo entre cada um). Implementado em `_icone_iagilize_animado()` e os recortes salvos em `assets/bloco_1.png` a `bloco_5.png`.
+  - Bug encontrado e corrigido no processo: o HTML da tela não renderizava (aparecia como texto cru), porque a indentação aninhada do f-string tinha 4+ espaços de recuo em algumas linhas, e o Markdown do Streamlit interpreta isso como bloco de código. Corrigido gerando o HTML sempre em uma linha só, sem indentação.
+  - Segundo bug: contra o fundo preto da tela, as bordas suavizadas dos blocos (antialiasing feito pensando em fundo branco no arquivo original) criavam um halo claro ao redor de cada peça, parecendo soltas. Corrigido com um cartão branco (`border-radius:16px`) atrás só do ícone, mantendo o resto da tela escura.
+  - No fim, a fundadora testou numa aba do navegador com cache antigo (viu a esfera, achou que eu tinha mudado tudo sem avisar) e decidiu **voltar pra esfera por enquanto**, deixando os blocos de lado por ora. `_tela_boas_vindas` voltou a usar `assets/orb.png`. O código dos blocos (`_icone_iagilize_animado`, `_BLOCOS_ICONE`, `_ORDEM_APARECIMENTO`, os recortes `assets/bloco_1.png` a `bloco_5.png`) continua no projeto, pronto pra retomar se ela quiser voltar a essa ideia depois.
+- 2026-07-06: Dia 3 do roadmap implementado (onboarding + follow-up pós-compra).
+  - **Onboarding em duas perguntas**: além da pergunta de prioridade (já existia), o Guardião agora faz uma segunda pergunta curta sobre dívida/meta/limite (guardrail), guardada em `perfil.guardrails`. Bug encontrado no meio do caminho: a condição da segunda pergunta dependia de "memória vazia", mas depois que a prioridade é salva a memória deixa de estar vazia, então a pergunta 2 nunca disparava. Corrigido em `metodo.py`: as duas condições agora são independentes (pergunta 2 olha só se `perfil.guardrails` está vazio, não se a memória inteira está vazia).
+  - **Follow-up pós-compra proativo**: no início de toda conversa nova, o Guardião checa a memória por decisões em aberto (`esperou`, `vai comparar`, `comprou`) com data anterior a hoje, e pergunta sobre a mais recente antes de tratar qualquer assunto novo. Isso fecha o ciclo da decisão sem depender de um botão de confirmação (que já tínhamos descartado por não ser confiável).
+  - Para isso funcionar, o modelo precisava saber "que dia é hoje" pra comparar com a data salva, o que não existia antes. Adicionado `HOJE E: {data}` na injeção de memória em `cerebro.py` (`_montar_mensagens`).
+  - A instrução de follow-up não disparava de primeira (ficava enterrada perto do fim do prompt, competindo com muitas outras regras). Movida pra logo depois de "Memória primeiro", com linguagem mais imperativa e um exemplo completo. Testado com uma pendência inserida manualmente (data de 2 dias atrás): funcionou, a primeira coisa que o Guardião perguntou foi sobre a pendência, antes de qualquer saudação.
+  - Testado de ponta a ponta com contas de teste isoladas: onboarding (2 perguntas, guardrail salvo corretamente) e follow-up proativo (pendência puxada primeiro). Ambos funcionando.
+- 2026-07-06: teste de ponta a ponta cobrindo Dia 2 + Dia 3 juntos (onboarding, comparação, checagem de segurança, follow-up com pendência retroativa, detecção de duplicata). Todos os 5 cenários passaram. No caminho, achado mais um caso de resposta cortada no meio (limite de tokens): quando o turno combina follow-up de pendência OU detecção de duplicata junto com o diagnóstico completo de rótulos, 1200 tokens ainda não bastava. Aumentado para 2000 em `cerebro.py`. Reenviado o mesmo cenário depois do ajuste: resposta completa, sem corte.
+
+## 10. Próximos passos
+
+- (a definir na próxima sessão)
