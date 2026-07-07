@@ -2,7 +2,7 @@
 
 > Cérebro do projeto. Fonte única de verdade sobre o Guardião.
 > Este arquivo é lido no início de cada sessão e atualizado ao fim dela.
-> Última atualização: 2026-07-06.
+> Última atualização: 2026-07-07.
 
 ---
 
@@ -49,7 +49,7 @@ Scaffold em `meus-produtos/guardiao-mvp/`, dentro do fluxo-criativo. Essa pasta 
 - Dia 1 (feito): scaffold + memória persistente funcionando.
 - Dia 2 (feito): 3 lentes afiadas + detecção de duplicata. Ver seção 9 para detalhes de implementação.
 - Dia 3 (feito): onboarding + follow-up pós-compra. Ver seção 9 para detalhes de implementação.
-- Dia 4: PWA + deploy. Deploy da fundadora é Vercel.
+- Dia 4 (deploy feito, PWA pendente): app no ar no Streamlit Community Cloud (`guardiao-mvp-gj28hwdwtmvrphfqnge2mm.streamlit.app`). Vercel NÃO serve app Streamlit (precisa de servidor Python vivo + WebSocket); ficou pra uma reconstrução futura em Next.js quando o produto validar. Detalhes na seção 9.
 
 ## 7. Decisões abertas (da fundadora)
 
@@ -105,7 +105,10 @@ Detalhes completos em `benchmark/benchmark-concorrentes.md`. Resumo:
   - A instrução de follow-up não disparava de primeira (ficava enterrada perto do fim do prompt, competindo com muitas outras regras). Movida pra logo depois de "Memória primeiro", com linguagem mais imperativa e um exemplo completo. Testado com uma pendência inserida manualmente (data de 2 dias atrás): funcionou, a primeira coisa que o Guardião perguntou foi sobre a pendência, antes de qualquer saudação.
   - Testado de ponta a ponta com contas de teste isoladas: onboarding (2 perguntas, guardrail salvo corretamente) e follow-up proativo (pendência puxada primeiro). Ambos funcionando.
 - 2026-07-06: teste de ponta a ponta cobrindo Dia 2 + Dia 3 juntos (onboarding, comparação, checagem de segurança, follow-up com pendência retroativa, detecção de duplicata). Todos os 5 cenários passaram. No caminho, achado mais um caso de resposta cortada no meio (limite de tokens): quando o turno combina follow-up de pendência OU detecção de duplicata junto com o diagnóstico completo de rótulos, 1200 tokens ainda não bastava. Aumentado para 2000 em `cerebro.py`. Reenviado o mesmo cenário depois do ajuste: resposta completa, sem corte.
+- 2026-07-07: DEPLOY. App colocado no ar no Streamlit Community Cloud. Aprendizados importantes: (1) Vercel não hospeda Streamlit (só páginas estáticas / funções curtas; Streamlit precisa de processo Python vivo + WebSocket). (2) Streamlit Cloud gratuito só acessa repositório GitHub PÚBLICO, então o repo `lyzasc-droid/guardiao-mvp` teve que virar público (a chave da API NÃO está no repo, está nos Secrets, então o que fica exposto é só o código/método). (3) A chave vai nos "Secrets" do app (formato TOML `ANTHROPIC_API_KEY = "sk-ant-..."`); erramos várias vezes por aspas sobrando e por uma versão mascarada/encurtada da chave ter sido colada. (4) Ao trocar o secret, o app precisa de REBOOT pra pegar o valor novo (não basta salvar). (5) Banco `guardiao.db` no Streamlit Cloud é efêmero (some quando o app hiberna), então a memória permanente de verdade fica pra quando migrar pra banco externo. Limitação de privacidade anotada: identificação é só um nome na URL, sem senha, então não é cofre por pessoa ainda (login real = passo futuro).
+- 2026-07-07: onboarding reformulado de conversacional (LLM perguntava em texto aberto) para FORMULÁRIO OBJETIVO, por feedback da fundadora testando ao vivo: campo aberto trava quem não é organizado. Nova tela de "perfil rápido" no primeiro uso (`_tela_perfil_rapido` em `app.py`): duas perguntas com opções pra marcar (checkbox) + campo aberto opcional. A opção "Juntar dinheiro pra um objetivo" abre um campo condicional "Qual objetivo?" quando marcada (evita objetivo solto sem nome). Resultado salvo em `perfil.prioridade` e `perfil.guardrails`. `metodo.py` atualizado pra o LLM NÃO repetir perguntas de onboarding (agora vem tudo preenchido do formulário). Quem já tinha perfil (usuários antigos) não vê o formulário. Testado: formulário aparece, campo condicional surge, opções salvam, fluxo segue pro chat; lógica de montagem do texto verificada isolada (inclui o objetivo nomeado).
 
 ## 10. Próximos passos
 
-- (a definir na próxima sessão)
+- Enviar a atualização do onboarding-formulário pro GitHub (push via VS Code) pra o app no ar pegar a mudança.
+- Quando validar com usuários: migrar pra banco de dados externo (memória permanente) e adicionar login de verdade (privacidade por pessoa). Aí sim reconstruir front em Next.js se quiser rodar na Vercel.

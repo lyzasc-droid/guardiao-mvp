@@ -92,6 +92,23 @@ MODELOS = {
     "Haiku (mais barato)": "claude-haiku-4-5",
 }
 
+# Perfil rapido (onboarding objetivo, no primeiro uso). Opcoes prontas pra
+# pessoa clicar, em vez de campo aberto que trava quem nao e organizado.
+OPCAO_OBJETIVO = "Juntar dinheiro pra um objetivo"
+OPCOES_PRIORIDADE = [
+    "Não entrar em dívida",
+    "Parar de comprar por impulso",
+    OPCAO_OBJETIVO,
+    "Cortar gastos que não valem a pena",
+    "Organizar minhas finanças",
+]
+OPCOES_GUARDRAILS = [
+    "Tô pagando um cartão ou dívida",
+    "Tenho um limite de quanto posso gastar por mês",
+    "Momento sem renda, preciso segurar tudo",
+    "Nada disso agora",
+]
+
 
 ROTULOS_CONSCIENCIA = [
     "Motivação da compra",
@@ -509,6 +526,85 @@ def tela_do_chat():
             st.rerun()
 
 
+def _perfil_incompleto(memoria):
+    """True quando a pessoa ainda nao passou pelo perfil rapido (nem prioridade
+    nem guardrails preenchidos). Quem ja tem qualquer um dos dois (inclusive de
+    versoes antigas) nao ve o formulario de novo."""
+    perfil = memoria.get("perfil", {})
+    return not perfil.get("prioridade") and not perfil.get("guardrails")
+
+
+def _tela_perfil_rapido(usuario_id):
+    """Onboarding objetivo: a pessoa marca opcoes prontas (e detalha em campos
+    abertos so quando quer), em vez de responder um campo aberto do zero. Salva
+    o resultado em perfil.prioridade e perfil.guardrails e segue pro chat.
+    """
+    nome = st.session_state.get("nome", "").strip()
+    st.title("🛡️ Guardião")
+    saudacao = f"Oi, {nome}. " if nome else ""
+    st.markdown(f"{saudacao}Antes de começar, um perfil rápido pra eu te ajudar melhor.")
+
+    st.markdown("#### O que você mais quer proteger no seu dinheiro?")
+    st.caption("Pode marcar mais de uma.")
+    marcadas_prio = []
+    objetivo = ""
+    for opcao in OPCOES_PRIORIDADE:
+        if st.checkbox(opcao, key=f"prio_{opcao}"):
+            marcadas_prio.append(opcao)
+            if opcao == OPCAO_OBJETIVO:
+                objetivo = st.text_input(
+                    "Qual objetivo?",
+                    key="objetivo",
+                    placeholder="ex: trocar o carro, uma viagem, uma reserva",
+                )
+    detalhe = st.text_input(
+        "Quer detalhar? (opcional)",
+        key="detalhe_prioridade",
+        placeholder="algo mais que eu deva saber",
+    )
+
+    st.markdown("#### Tem algo que eu deva levar em conta nas suas compras?")
+    st.caption("Pode marcar mais de uma.")
+    marcadas_guard = []
+    for opcao in OPCOES_GUARDRAILS:
+        if st.checkbox(opcao, key=f"guard_{opcao}"):
+            marcadas_guard.append(opcao)
+    outro_guard = st.text_input(
+        "Outro (opcional)",
+        key="outro_guardrail",
+        placeholder="algum limite ou situação sua",
+    )
+
+    st.write("")
+    if st.button("Começar", type="primary"):
+        # Monta a prioridade a partir das opcoes marcadas. A opcao de objetivo,
+        # quando preenchida, entra ja nomeada ("Juntar pra: trocar o carro").
+        partes = []
+        for opcao in marcadas_prio:
+            if opcao == OPCAO_OBJETIVO and objetivo.strip():
+                partes.append(f"Juntar dinheiro para: {objetivo.strip()}")
+            else:
+                partes.append(opcao)
+        if detalhe.strip():
+            partes.append(detalhe.strip())
+        prioridade = ". ".join(partes) if partes else "Comprar com mais consciência"
+
+        # Guardrails: as opcoes marcadas (menos "Nada disso agora") mais o campo
+        # aberto. Se ficar vazio, guarda um marcador pra nao reperguntar depois.
+        guardrails = [g for g in marcadas_guard if g != "Nada disso agora"]
+        if outro_guard.strip():
+            guardrails.append(outro_guard.strip())
+        if not guardrails:
+            guardrails = ["nenhum guardrail declarado ainda"]
+
+        memoria = mem.ler_memoria(usuario_id)
+        memoria.setdefault("perfil", {})
+        memoria["perfil"]["prioridade"] = prioridade
+        memoria["perfil"]["guardrails"] = guardrails
+        mem.salvar_memoria(usuario_id, memoria)
+        st.rerun()
+
+
 # Guarda simples: sem chave de API, avisa antes de tentar conversar.
 if not os.environ.get("ANTHROPIC_API_KEY"):
     st.title("🛡️ Guardião")
@@ -529,4 +625,8 @@ elif "usuario_id" not in st.session_state:
     else:
         tela_de_entrada()
 else:
-    tela_do_chat()
+    _memoria_atual = mem.ler_memoria(st.session_state.usuario_id)
+    if _perfil_incompleto(_memoria_atual):
+        _tela_perfil_rapido(st.session_state.usuario_id)
+    else:
+        tela_do_chat()
