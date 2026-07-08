@@ -19,24 +19,30 @@ from guardiao import memoria as mem
 
 CAMINHO_ASSETS = Path(__file__).resolve().parent / "assets"
 
-# Logo da marca (IAgilize), recortada e sem fundo, carregada uma vez.
-_LOGO_B64 = base64.b64encode((CAMINHO_ASSETS / "logo.png").read_bytes()).decode("ascii")
+# Marca do produto: so o simbolo (tijolinhos) da IAgilize, sem a palavra
+# "IAgilize", mais o nome "Guardião do Bolso" ao lado. Icone carregado uma vez.
+_ICONE_B64 = base64.b64encode((CAMINHO_ASSETS / "icone.png").read_bytes()).decode("ascii")
 
 
 def _logo_html(altura_px, centralizado=False):
-    """Devolve o <img> da logo com a altura pedida, opcionalmente centralizado."""
-    estilo = f"height:{altura_px}px; width:auto;"
-    if centralizado:
-        return (
-            f'<div style="display:flex; justify-content:center; margin-bottom:8px;">'
-            f'<img src="data:image/png;base64,{_LOGO_B64}" style="{estilo}" /></div>'
-        )
-    return f'<img src="data:image/png;base64,{_LOGO_B64}" style="{estilo} margin-bottom:12px;" />'
+    """Simbolo + 'Guardião do Bolso'. altura_px e a altura do simbolo; o texto
+    acompanha proporcionalmente. centralizado=True alinha ao centro (abertura).
+    """
+    fonte = round(altura_px * 0.62)
+    justify = "center" if centralizado else "flex-start"
+    return (
+        f'<div style="display:flex; align-items:center; gap:12px; '
+        f'justify-content:{justify}; margin-bottom:12px;">'
+        f'<img src="data:image/png;base64,{_ICONE_B64}" style="height:{altura_px}px; width:auto;" />'
+        f'<span style="font-size:{fonte}px; font-weight:600; color:#131B3A; '
+        f'letter-spacing:-0.5px;">Guardião do Bolso</span>'
+        f"</div>"
+    )
 
 
 def _cabecalho_logo():
-    """Cabecalho padrao das telas: a logo no lugar do antigo titulo de texto."""
-    st.markdown(_logo_html(44), unsafe_allow_html=True)
+    """Cabecalho padrao das telas: o simbolo + 'Guardião do Bolso'."""
+    st.markdown(_logo_html(38), unsafe_allow_html=True)
 
 # Os 5 blocos foram recortados pixel a pixel do logo real da IAgilize
 # (assets/logoGuardiaoBolso.png), preservando fidelidade total a marca.
@@ -403,7 +409,7 @@ def _tela_boas_vindas(usuario_id, desde_id):
     conteudo = (
         '<div style="display:flex; flex-direction:column; align-items:center; '
         'justify-content:center; padding-top:20vh;">'
-        f'{_logo_html(64, centralizado=True)}'
+        f'{_logo_html(50, centralizado=True)}'
         '<p style="font-size:19px; margin-top:28px; '
         'text-align:center; max-width:280px;">O que você quer comprar hoje?</p>'
         '</div>'
