@@ -5,6 +5,7 @@ Precisa de ANTHROPIC_API_KEY no arquivo .env (ou no ambiente).
 """
 
 import base64
+import html
 import os
 import re
 from pathlib import Path
@@ -19,29 +20,46 @@ from guardiao import memoria as mem
 
 CAMINHO_ASSETS = Path(__file__).resolve().parent / "assets"
 
-# Marca do produto: so o simbolo (tijolinhos) da IAgilize, sem a palavra
-# "IAgilize", mais o nome "Guardião do Bolso" ao lado. Icone carregado uma vez.
+# Paleta oficial da marca (Design System Guardião do Bolso by IAgilize).
+COR_NAVY = "#0C1D2E"
+COR_LARANJA = "#FF8A00"
+COR_OFFWHITE = "#F7F7F2"
+COR_VERDE = "#2BA745"
+COR_AMARELO = "#F5A623"
+COR_VERMELHO = "#EF4444"
+COR_AZUL_INFO = "#2F6DF6"
+
+# Marca do produto: o simbolo (tijolinhos) da IAgilize, mais o lockup
+# "Guardião do Bolso" / "by IAgilize" com o tracinho laranja de assinatura.
 _ICONE_B64 = base64.b64encode((CAMINHO_ASSETS / "icone.png").read_bytes()).decode("ascii")
 
 
 def _logo_html(altura_px, centralizado=False):
-    """Simbolo + 'Guardião do Bolso'. altura_px e a altura do simbolo; o texto
-    acompanha proporcionalmente. centralizado=True alinha ao centro (abertura).
+    """Simbolo + lockup 'Guardião do Bolso' / 'by IAgilize'. altura_px e a
+    altura do simbolo; o texto acompanha proporcionalmente. centralizado=True
+    alinha ao centro (tela de abertura).
     """
-    fonte = round(altura_px * 0.62)
+    fonte_titulo = round(altura_px * 0.6)
+    fonte_sub = round(altura_px * 0.24)
     justify = "center" if centralizado else "flex-start"
+    align = "center" if centralizado else "flex-start"
     return (
         f'<div style="display:flex; align-items:center; gap:12px; '
         f'justify-content:{justify}; margin-bottom:12px;">'
         f'<img src="data:image/png;base64,{_ICONE_B64}" style="height:{altura_px}px; width:auto;" />'
-        f'<span style="font-size:{fonte}px; font-weight:600; color:#131B3A; '
-        f'letter-spacing:-0.5px;">Guardião do Bolso</span>'
-        f"</div>"
+        f'<div style="display:flex; flex-direction:column; align-items:{align};">'
+        f'<span style="font-size:{fonte_titulo}px; font-weight:700; color:{COR_NAVY}; '
+        f'line-height:1.05; letter-spacing:-0.5px;">Guardião do Bolso</span>'
+        f'<span style="font-size:{fonte_sub}px; font-weight:600; color:{COR_LARANJA}; '
+        f'text-transform:uppercase; letter-spacing:1px; margin-top:2px;">by IAgilize</span>'
+        f'<div style="width:36px; height:3px; background:{COR_LARANJA}; margin-top:5px; '
+        f'border-radius:2px;"></div>'
+        f"</div></div>"
     )
 
 
 def _cabecalho_logo():
-    """Cabecalho padrao das telas: o simbolo + 'Guardião do Bolso'."""
+    """Cabecalho padrao das telas: o simbolo + o lockup 'Guardião do Bolso'."""
     st.markdown(_logo_html(38), unsafe_allow_html=True)
 
 # Os 5 blocos foram recortados pixel a pixel do logo real da IAgilize
@@ -214,7 +232,15 @@ def mostrar_resposta(texto):
         aviso = linhas[indice_aviso].strip().lstrip("⚠️").strip() or "Não fecha ainda"
         if antes:
             st.markdown(antes)
-        st.warning(f"**{aviso}**", icon="⚠️")
+        st.markdown(
+            f'<div style="display:flex; align-items:center; gap:10px; '
+            f'background:{COR_VERMELHO}1A; border-left:4px solid {COR_VERMELHO}; '
+            f'border-radius:8px; padding:12px 16px; margin:8px 0;">'
+            f'<span style="font-size:18px;">⚠️</span>'
+            f'<strong style="color:{COR_VERMELHO}; font-size:15px;">{html.escape(aviso)}</strong>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
         corpo = "\n".join(linhas[indice_aviso + 1 :]).strip()
     else:
         corpo = texto
@@ -231,9 +257,16 @@ def mostrar_resposta(texto):
         valor = rotulos.get(rotulo)
         if not valor:
             continue
-        with st.container(border=True):
-            st.markdown(f"**{rotulo}**")
-            st.markdown(valor)
+        st.markdown(
+            f'<div style="background:{COR_NAVY}; border-radius:12px; '
+            f'padding:14px 16px; margin:8px 0;">'
+            f'<div style="color:{COR_LARANJA}; font-weight:700; font-size:12px; '
+            f'text-transform:uppercase; letter-spacing:0.6px; margin-bottom:4px;">'
+            f"{html.escape(rotulo)}</div>"
+            f'<div style="color:{COR_OFFWHITE}; font-size:15px; line-height:1.45;">'
+            f"{html.escape(valor)}</div></div>",
+            unsafe_allow_html=True,
+        )
     if fim:
         st.markdown(fim)
 

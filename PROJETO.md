@@ -2,7 +2,7 @@
 
 > Cérebro do projeto. Fonte única de verdade sobre o Guardião.
 > Este arquivo é lido no início de cada sessão e atualizado ao fim dela.
-> Última atualização: 2026-07-07.
+> Última atualização: 2026-07-08.
 
 ---
 
@@ -109,8 +109,16 @@ Detalhes completos em `benchmark/benchmark-concorrentes.md`. Resumo:
 - 2026-07-07: onboarding reformulado de conversacional (LLM perguntava em texto aberto) para FORMULÁRIO OBJETIVO, por feedback da fundadora testando ao vivo: campo aberto trava quem não é organizado. Nova tela de "perfil rápido" no primeiro uso (`_tela_perfil_rapido` em `app.py`): duas perguntas com opções pra marcar (checkbox) + campo aberto opcional. A opção "Juntar dinheiro pra um objetivo" abre um campo condicional "Qual objetivo?" quando marcada (evita objetivo solto sem nome). Resultado salvo em `perfil.prioridade` e `perfil.guardrails`. `metodo.py` atualizado pra o LLM NÃO repetir perguntas de onboarding (agora vem tudo preenchido do formulário). Quem já tinha perfil (usuários antigos) não vê o formulário. Testado: formulário aparece, campo condicional surge, opções salvam, fluxo segue pro chat; lógica de montagem do texto verificada isolada (inclui o objetivo nomeado).
 - 2026-07-07: identidade visual. A fundadora pediu a logo da marca no app e fundo branco. Tema claro fixo em `.streamlit/config.toml` (`base = "light"`, `primaryColor = "#E8853A"`, o laranja da marca). Substituído o antigo título "🛡️ Guardião" no topo das telas (`_cabecalho_logo`) e a esfera azul na abertura pela marca. A esfera (`orb.png`) e os blocos animados seguem guardados caso queira retomar.
 - 2026-07-08: refino da marca. A fundadora pediu pra usar SÓ o símbolo (os tijolinhos), SEM a palavra "IAgilize", e o nome "Guardião do Bolso" ao lado. Recortado o símbolo isolado em `assets/icone.png` (sem o texto IAgilize). `_logo_html` agora monta símbolo + texto "Guardião do Bolso" (navy #131B3A). Aplicado no header das telas e na tela de abertura. Testado: perfil, abertura e header do chat mostram "[símbolo] Guardião do Bolso" em fundo branco.
+- 2026-07-08: aplicado o Design System oficial da marca (peça visual trazida pela fundadora: paleta, lockup, cartão de veredito). Isso evolui a decisão anterior (só símbolo, sem "IAgilize"): o design system oficial usa o lockup completo "Guardião do Bolso" + "by IAgilize" em laranja com um tracinho de assinatura embaixo, deixando explícita a relação produto-filho/marca-mãe. Aplicado em `app.py`:
+  - Paleta oficial extraída como constantes (`COR_NAVY #0C1D2E`, `COR_LARANJA #FF8A00`, `COR_OFFWHITE #F7F7F2`, `COR_VERDE #2BA745`, `COR_AMARELO #F5A623`, `COR_VERMELHO #EF4444`, `COR_AZUL_INFO #2F6DF6`).
+  - `_logo_html` reformulado: símbolo + "Guardião do Bolso" (navy, negrito) + "by IAgilize" (laranja, caixa alta, menor) + barrinha laranja de assinatura embaixo.
+  - Os cartões dos rótulos da Consciência de Compra (Motivação, Clareza, Comparação, Checagem de segurança, Viabilidade) agora seguem o estilo "cartão de veredito" da peça: fundo navy, rótulo em laranja caixa-alta, texto em off-white. Antes eram cartões brancos com borda simples do Streamlit.
+  - O aviso "Não fecha ainda" mudou de amarelo (padrão do `st.warning`) para vermelho (`COR_VERMELHO`), batendo com o padrão de cores da peça (vermelho = alerta forte, amarelo reservado pro status "espere").
+  - `.streamlit/config.toml`: `primaryColor` ajustado para o laranja exato da marca (`#FF8A00`, antes `#E8853A`) e fundo/texto travados em off-white (`#F7F7F2`) e navy (`#0C1D2E`).
+  - Texto do conteúdo renderizado nesses cartões (`html.escape`) por segurança, já que o app está público sem autenticação e o conteúdo vem de texto digitado pela pessoa.
+  - Testado com conta de teste isolada (`teste-marca-2`, removida do banco depois): tela de perfil, tela de abertura e cartão de veredito completo (com aviso vermelho + 3 lentes) confirmados visualmente batendo com a peça de referência.
 
 ## 10. Próximos passos
 
-- Enviar a atualização (onboarding-formulário + logo/fundo branco) pro GitHub (push via VS Code) pra o app no ar pegar a mudança.
+- Enviar a atualização (onboarding-formulário + logo/fundo branco + design system novo) pro GitHub (push via VS Code) pra o app no ar pegar a mudança.
 - Quando validar com usuários: migrar pra banco de dados externo (memória permanente) e adicionar login de verdade (privacidade por pessoa). Aí sim reconstruir front em Next.js se quiser rodar na Vercel.
