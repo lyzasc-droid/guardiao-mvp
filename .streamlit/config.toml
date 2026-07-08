@@ -1,0 +1,5 @@
+# Tema claro fixo: o app sempre abre com fundo branco, independente de o
+# aparelho da pessoa estar em modo escuro.
+[theme]
+base = "light"
+primaryColor = "#E8853A"

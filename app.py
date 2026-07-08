@@ -19,6 +19,25 @@ from guardiao import memoria as mem
 
 CAMINHO_ASSETS = Path(__file__).resolve().parent / "assets"
 
+# Logo da marca (IAgilize), recortada e sem fundo, carregada uma vez.
+_LOGO_B64 = base64.b64encode((CAMINHO_ASSETS / "logo.png").read_bytes()).decode("ascii")
+
+
+def _logo_html(altura_px, centralizado=False):
+    """Devolve o <img> da logo com a altura pedida, opcionalmente centralizado."""
+    estilo = f"height:{altura_px}px; width:auto;"
+    if centralizado:
+        return (
+            f'<div style="display:flex; justify-content:center; margin-bottom:8px;">'
+            f'<img src="data:image/png;base64,{_LOGO_B64}" style="{estilo}" /></div>'
+        )
+    return f'<img src="data:image/png;base64,{_LOGO_B64}" style="{estilo} margin-bottom:12px;" />'
+
+
+def _cabecalho_logo():
+    """Cabecalho padrao das telas: a logo no lugar do antigo titulo de texto."""
+    st.markdown(_logo_html(44), unsafe_allow_html=True)
+
 # Os 5 blocos foram recortados pixel a pixel do logo real da IAgilize
 # (assets/logoGuardiaoBolso.png), preservando fidelidade total a marca.
 # Cada bbox e (x0, y0, x1, y1) em coordenadas absolutas do arquivo original.
@@ -307,7 +326,7 @@ def _autofoco(seletor):
 
 def tela_de_entrada():
     """Pede um nome para identificar a pessoa e manter a memoria entre sessoes."""
-    st.title("🛡️ Guardião")
+    _cabecalho_logo()
     st.caption("Fala comigo antes de comprar. Eu lembro de você.")
     nome = st.text_input("Como você se chama?", placeholder="seu nome ou apelido")
     _autofoco('input[aria-label="Como você se chama?"]')
@@ -373,36 +392,19 @@ def barra_lateral(usuario_id):
 
 
 def _tela_boas_vindas(usuario_id, desde_id):
-    """Tela de abertura de cada analise nova: fundo escuro, so a esfera e a
+    """Tela de abertura de cada analise nova: fundo branco, a logo da marca e a
     pergunta direta. Sem barra lateral, sem cartoes, sem historico visivel.
-    Essa e a identidade visual propria do Guardiao (nao imita Claude/ChatGPT
-    de proposito, pra nao parecer so mais um chat generico de IA).
+    Assim que a pessoa manda a primeira mensagem (voz ou texto), a tela normal
+    do chat assume, com os cartoes e a memoria.
 
-    A versao com os blocos animados do logo da IAgilize (_icone_iagilize_animado)
-    foi testada em 2026-07-06 e guardada pra retomar depois, mas por ora a
-    fundadora pediu pra voltar pra esfera. Assim que a pessoa manda a primeira
-    mensagem (voz ou texto), a tela normal do chat assume, com os cartoes e a
-    memoria.
+    (A esfera azul e os blocos animados do logo, versoes anteriores desta tela,
+    seguem guardados nos assets caso a fundadora queira retomar.)
     """
-    st.markdown(
-        """
-        <style>
-        [data-testid="stAppViewContainer"], [data-testid="stMain"],
-        [data-testid="stHeader"], [data-testid="stBottom"] {
-            background: #0a0a0a !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    orb_b64 = base64.b64encode((CAMINHO_ASSETS / "orb.png").read_bytes()).decode("ascii")
     conteudo = (
         '<div style="display:flex; flex-direction:column; align-items:center; '
-        'justify-content:center; padding-top:16vh;">'
-        f'<img src="data:image/png;base64,{orb_b64}" '
-        'style="width:200px; height:200px; border-radius:50%;" />'
-        '<p style="color:#F5F5F5; font-size:19px; margin-top:32px; '
+        'justify-content:center; padding-top:20vh;">'
+        f'{_logo_html(64, centralizado=True)}'
+        '<p style="font-size:19px; margin-top:28px; '
         'text-align:center; max-width:280px;">O que você quer comprar hoje?</p>'
         '</div>'
     )
@@ -447,7 +449,7 @@ def tela_do_chat():
         _tela_boas_vindas(usuario_id, desde_id)
         return
 
-    st.title("🛡️ Guardião")
+    _cabecalho_logo()
     barra_lateral(usuario_id)
 
     for m in historico:
@@ -540,7 +542,7 @@ def _tela_perfil_rapido(usuario_id):
     o resultado em perfil.prioridade e perfil.guardrails e segue pro chat.
     """
     nome = st.session_state.get("nome", "").strip()
-    st.title("🛡️ Guardião")
+    _cabecalho_logo()
     saudacao = f"Oi, {nome}. " if nome else ""
     st.markdown(f"{saudacao}Antes de começar, um perfil rápido pra eu te ajudar melhor.")
 
@@ -607,7 +609,7 @@ def _tela_perfil_rapido(usuario_id):
 
 # Guarda simples: sem chave de API, avisa antes de tentar conversar.
 if not os.environ.get("ANTHROPIC_API_KEY"):
-    st.title("🛡️ Guardião")
+    _cabecalho_logo()
     st.warning(
         "Falta a chave da API da Anthropic. Crie um arquivo chamado .env na pasta "
         "do projeto com a linha:  ANTHROPIC_API_KEY=sua-chave-aqui  e recarregue."
