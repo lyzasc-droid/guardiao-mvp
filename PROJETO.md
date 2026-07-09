@@ -2,7 +2,7 @@
 
 > Cérebro do projeto. Fonte única de verdade sobre o Guardião.
 > Este arquivo é lido no início de cada sessão e atualizado ao fim dela.
-> Última atualização: 2026-07-08.
+> Última atualização: 2026-07-09.
 
 ---
 
@@ -117,8 +117,15 @@ Detalhes completos em `benchmark/benchmark-concorrentes.md`. Resumo:
   - `.streamlit/config.toml`: `primaryColor` ajustado para o laranja exato da marca (`#FF8A00`, antes `#E8853A`) e fundo/texto travados em off-white (`#F7F7F2`) e navy (`#0C1D2E`).
   - Texto do conteúdo renderizado nesses cartões (`html.escape`) por segurança, já que o app está público sem autenticação e o conteúdo vem de texto digitado pela pessoa.
   - Testado com conta de teste isolada (`teste-marca-2`, removida do banco depois): tela de perfil, tela de abertura e cartão de veredito completo (com aviso vermelho + 3 lentes) confirmados visualmente batendo com a peça de referência.
+- 2026-07-08 (mesmo dia, revisão): a fundadora testou o design system claro/navy (item anterior) no app publicado e não gostou, especificamente dos cartões de diagnóstico e da paleta em geral. Perguntada sobre a direção, escolheu "glassmorphism / cartões flutuantes" entre 3 linhas visuais oferecidas (escuro tech, claro minimalista, glass). Reformulado em `app.py` e `.streamlit/config.toml`:
+  - Tema do app trocado de claro para **escuro fixo** (`base = "dark"`, fundo `#0B0F1A`, `secondaryBackgroundColor #141B2E`, texto `#F2F3F5`, `primaryColor` laranja da marca mantido).
+  - Adicionado `_injetar_estilo_global()`: gradiente radial sutil (laranja + azul da marca) atrás do conteúdo, dando profundidade/"clima tech" ao fundo escuro.
+  - Cartões de diagnóstico (Motivação/Clareza/Comparação/Checagem/Viabilidade) trocados do navy sólido anterior para **vidro fosco de verdade**: fundo semitransparente (`rgba(255,255,255,0.06)`), `backdrop-filter: blur(16px)`, borda clara sutil, sombra suave, flutuando sobre o fundo escuro com gradiente.
+  - Aviso "Não fecha ainda" seguiu o mesmo tratamento (vermelho translúcido com blur, em vez de vermelho sólido).
+  - Logo: título "Guardião do Bolso" mudou de navy para texto claro (`#F2F3F5`), pra ficar legível no fundo escuro; "by IAgilize" continua laranja.
+  - Testado com conta de teste isolada (`teste-marca-3`, removida do banco depois): tela de perfil, tela de abertura (fundo escuro com brilho) e os 3 cartões de vidro fosco no diagnóstico completo, confirmados visualmente.
 
 ## 10. Próximos passos
 
-- Enviar a atualização (onboarding-formulário + logo/fundo branco + design system novo) pro GitHub (push via VS Code) pra o app no ar pegar a mudança.
+- Enviar a atualização (tema escuro + cartões de vidro fosco) pro GitHub (push via VS Code) pra o app no ar pegar a mudança.
 - Quando validar com usuários: migrar pra banco de dados externo (memória permanente) e adicionar login de verdade (privacidade por pessoa). Aí sim reconstruir front em Next.js se quiser rodar na Vercel.

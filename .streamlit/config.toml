@@ -1,8 +1,8 @@
-# Tema claro fixo, com a paleta oficial da marca Guardião do Bolso by
-# IAgilize: sempre abre claro, independente de o aparelho estar em modo
-# escuro.
+# Tema escuro fixo (linha "tech/glass" pedida pela fundadora): sempre abre
+# escuro, independente de o aparelho estar em modo claro.
 [theme]
-base = "light"
+base = "dark"
 primaryColor = "#FF8A00"
-backgroundColor = "#F7F7F2"
-textColor = "#0C1D2E"
+backgroundColor = "#0B0F1A"
+secondaryBackgroundColor = "#141B2E"
+textColor = "#F2F3F5"

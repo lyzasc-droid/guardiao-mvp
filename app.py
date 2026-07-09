@@ -20,14 +20,38 @@ from guardiao import memoria as mem
 
 CAMINHO_ASSETS = Path(__file__).resolve().parent / "assets"
 
-# Paleta oficial da marca (Design System Guardião do Bolso by IAgilize).
+# Paleta oficial da marca (Design System Guardião do Bolso by IAgilize),
+# na linha "escura e tech" escolhida pela fundadora: fundo quase preto,
+# cartões em vidro fosco (glassmorphism) flutuando por cima.
 COR_NAVY = "#0C1D2E"
 COR_LARANJA = "#FF8A00"
 COR_OFFWHITE = "#F7F7F2"
+COR_TEXTO_CLARO = "#F2F3F5"
 COR_VERDE = "#2BA745"
 COR_AMARELO = "#F5A623"
 COR_VERMELHO = "#EF4444"
 COR_AZUL_INFO = "#2F6DF6"
+
+# Vidro fosco (glassmorphism): fundo semitransparente + blur, usado nos
+# cartões de diagnostico e no aviso de alerta, flutuando sobre o fundo escuro.
+VIDRO_BG = "rgba(255,255,255,0.06)"
+VIDRO_BORDA = "rgba(255,255,255,0.14)"
+
+
+def _injetar_estilo_global():
+    """Fundo escuro com brilho sutil de gradiente (laranja + azul da marca),
+    dando a sensacao 'tech' pedida pela fundadora. Roda uma vez por tela.
+    """
+    st.markdown(
+        '<style>[data-testid="stAppViewContainer"], [data-testid="stMain"] {'
+        f'background-color: {COR_NAVY};'
+        "background-image:"
+        f"radial-gradient(circle at 12% 18%, {COR_LARANJA}1A 0%, transparent 45%),"
+        f"radial-gradient(circle at 88% 82%, {COR_AZUL_INFO}22 0%, transparent 45%);"
+        "background-attachment: fixed;"
+        "}</style>",
+        unsafe_allow_html=True,
+    )
 
 # Marca do produto: o simbolo (tijolinhos) da IAgilize, mais o lockup
 # "Guardião do Bolso" / "by IAgilize" com o tracinho laranja de assinatura.
@@ -48,7 +72,7 @@ def _logo_html(altura_px, centralizado=False):
         f'justify-content:{justify}; margin-bottom:12px;">'
         f'<img src="data:image/png;base64,{_ICONE_B64}" style="height:{altura_px}px; width:auto;" />'
         f'<div style="display:flex; flex-direction:column; align-items:{align};">'
-        f'<span style="font-size:{fonte_titulo}px; font-weight:700; color:{COR_NAVY}; '
+        f'<span style="font-size:{fonte_titulo}px; font-weight:700; color:{COR_TEXTO_CLARO}; '
         f'line-height:1.05; letter-spacing:-0.5px;">Guardião do Bolso</span>'
         f'<span style="font-size:{fonte_sub}px; font-weight:600; color:{COR_LARANJA}; '
         f'text-transform:uppercase; letter-spacing:1px; margin-top:2px;">by IAgilize</span>'
@@ -125,6 +149,7 @@ load_dotenv()  # carrega ANTHROPIC_API_KEY e GUARDIAO_MODELO do .env, se existir
 mem.iniciar_banco()
 
 st.set_page_config(page_title="Guardião", page_icon="🛡️", layout="centered")
+_injetar_estilo_global()
 
 # Teto de uso por dia (controla o custo por pessoa). Ajustavel no .env.
 LIMITE_DIA = int(os.environ.get("LIMITE_MENSAGENS_DIA", "50"))
@@ -234,10 +259,11 @@ def mostrar_resposta(texto):
             st.markdown(antes)
         st.markdown(
             f'<div style="display:flex; align-items:center; gap:10px; '
-            f'background:{COR_VERMELHO}1A; border-left:4px solid {COR_VERMELHO}; '
-            f'border-radius:8px; padding:12px 16px; margin:8px 0;">'
+            f'background:{COR_VERMELHO}22; backdrop-filter:blur(16px); '
+            f'-webkit-backdrop-filter:blur(16px); border:1px solid {COR_VERMELHO}55; '
+            f'border-radius:14px; padding:12px 16px; margin:8px 0;">'
             f'<span style="font-size:18px;">⚠️</span>'
-            f'<strong style="color:{COR_VERMELHO}; font-size:15px;">{html.escape(aviso)}</strong>'
+            f'<strong style="color:#FFD5D5; font-size:15px;">{html.escape(aviso)}</strong>'
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -258,12 +284,14 @@ def mostrar_resposta(texto):
         if not valor:
             continue
         st.markdown(
-            f'<div style="background:{COR_NAVY}; border-radius:12px; '
-            f'padding:14px 16px; margin:8px 0;">'
+            f'<div style="background:{VIDRO_BG}; backdrop-filter:blur(16px); '
+            f'-webkit-backdrop-filter:blur(16px); border:1px solid {VIDRO_BORDA}; '
+            f'border-radius:16px; padding:14px 18px; margin:10px 0; '
+            f'box-shadow:0 8px 24px rgba(0,0,0,0.25);">'
             f'<div style="color:{COR_LARANJA}; font-weight:700; font-size:12px; '
             f'text-transform:uppercase; letter-spacing:0.6px; margin-bottom:4px;">'
             f"{html.escape(rotulo)}</div>"
-            f'<div style="color:{COR_OFFWHITE}; font-size:15px; line-height:1.45;">'
+            f'<div style="color:{COR_TEXTO_CLARO}; font-size:15px; line-height:1.45;">'
             f"{html.escape(valor)}</div></div>",
             unsafe_allow_html=True,
         )
