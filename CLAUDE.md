@@ -29,7 +29,7 @@ Da pasta `meus-produtos/guardiao-mvp/`:
 .venv/bin/streamlit run app.py
 ```
 
-A `ANTHROPIC_API_KEY` precisa estar no `.env` desta pasta. A memória persistente fica em `guardiao.db` (aqui mesmo).
+A `ANTHROPIC_API_KEY` e a `DATABASE_URL` (connection string do Postgres no Supabase) precisam estar no `.env` desta pasta. A memória persistente fica no Supabase, não mais em `guardiao.db` local (esse arquivo só existe como backup histórico pré-migração).
 
 ## Deploy
 

@@ -8,18 +8,55 @@ Tambem guarda as mensagens da conversa, mas a tela abre limpa a cada uso
 (sessao nova). O historico antigo nao volta a aparecer para o usuario; a
 continuidade vem da memoria, nao do rolo de mensagens.
 
-Fonte da verdade: um arquivo SQLite local (guardiao.db) na raiz do projeto.
-Sem servidor, sem nuvem. E o suficiente para validar a hipotese: a pessoa
-volta e o Guardiao lembra dela.
+Fonte da verdade: banco Postgres no Supabase (DATABASE_URL no .env). Antes
+disso era um arquivo SQLite local, que sumia toda vez que o app no Streamlit
+Cloud hibernava. Migrado pra nao perder a memoria de ninguem em producao.
 """
 
 import datetime
-import json
-import sqlite3
+import os
 from pathlib import Path
 
-# O banco fica na raiz do projeto, ao lado do app.py.
-CAMINHO_DB = Path(__file__).resolve().parent.parent / "guardiao.db"
+import psycopg2
+import psycopg2.extras
+
+
+def _carregar_url_do_env():
+    """Le DATABASE_URL do ambiente ou, se nao estiver setada (dev local sem
+    exportar variavel), sobe os diretorios procurando um .env com a chave.
+    Mesmo padrao ja usado no projeto pra outros segredos.
+    """
+    if os.environ.get("DATABASE_URL"):
+        return os.environ["DATABASE_URL"]
+    cur = Path(__file__).resolve().parent
+    while cur.parent != cur:
+        candidato = cur / ".env"
+        if candidato.exists():
+            for linha in candidato.read_text(encoding="utf-8").splitlines():
+                if linha.startswith("DATABASE_URL="):
+                    return linha.split("=", 1)[1].strip().strip('"').strip("'")
+        cur = cur.parent
+    raise RuntimeError(
+        "DATABASE_URL nao encontrada no .env. Pegue a connection string no "
+        "painel do Supabase (Project Settings > Database > Connection string) "
+        "e salve em DATABASE_URL no .env."
+    )
+
+
+_URL_BANCO = os.environ.get("DATABASE_URL") or _carregar_url_do_env()
+
+# Uma unica conexao reusada pelo processo inteiro (o app roda como um servidor
+# Python de vida longa, nao faz sentido abrir conexao nova a cada chamada como
+# fazia o SQLite local). Reconecta sozinha se a conexao cair.
+_conexao = None
+
+
+def _conn():
+    global _conexao
+    if _conexao is None or _conexao.closed:
+        _conexao = psycopg2.connect(_URL_BANCO)
+        _conexao.autocommit = True
+    return _conexao
 
 
 def _memoria_vazia():
@@ -36,52 +73,44 @@ def _memoria_vazia():
 
 def iniciar_banco():
     """Cria as tabelas se ainda nao existirem. Idempotente."""
-    con = sqlite3.connect(CAMINHO_DB)
-    con.execute(
-        "CREATE TABLE IF NOT EXISTS memoria ("
-        " usuario_id TEXT PRIMARY KEY,"
-        " doc TEXT NOT NULL)"
-    )
-    con.execute(
-        "CREATE TABLE IF NOT EXISTS mensagens ("
-        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        " usuario_id TEXT NOT NULL,"
-        " papel TEXT NOT NULL,"
-        " conteudo TEXT NOT NULL)"
-    )
-    # Migracao leve: garante a coluna de data (para o teto de uso por dia).
-    colunas = [linha[1] for linha in con.execute("PRAGMA table_info(mensagens)").fetchall()]
-    if "criado_em" not in colunas:
-        con.execute("ALTER TABLE mensagens ADD COLUMN criado_em TEXT")
-    con.commit()
-    con.close()
+    with _conn().cursor() as cur:
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS memoria ("
+            " usuario_id TEXT PRIMARY KEY,"
+            " doc JSONB NOT NULL)"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS mensagens ("
+            " id BIGSERIAL PRIMARY KEY,"
+            " usuario_id TEXT NOT NULL,"
+            " papel TEXT NOT NULL,"
+            " conteudo TEXT NOT NULL,"
+            " criado_em TIMESTAMPTZ NOT NULL DEFAULT now())"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mensagens_usuario"
+            " ON mensagens (usuario_id, id)"
+        )
 
 
 def ler_memoria(usuario_id):
     """Devolve o documento de memoria do usuario como dicionario."""
-    con = sqlite3.connect(CAMINHO_DB)
-    linha = con.execute(
-        "SELECT doc FROM memoria WHERE usuario_id = ?", (usuario_id,)
-    ).fetchone()
-    con.close()
+    with _conn().cursor() as cur:
+        cur.execute("SELECT doc FROM memoria WHERE usuario_id = %s", (usuario_id,))
+        linha = cur.fetchone()
     if linha is None:
         return _memoria_vazia()
-    try:
-        return json.loads(linha[0])
-    except json.JSONDecodeError:
-        return _memoria_vazia()
+    return linha[0]  # psycopg2 ja devolve JSONB como dict
 
 
 def salvar_memoria(usuario_id, doc):
     """Grava (ou substitui) o documento de memoria do usuario."""
-    con = sqlite3.connect(CAMINHO_DB)
-    con.execute(
-        "INSERT INTO memoria (usuario_id, doc) VALUES (?, ?)"
-        " ON CONFLICT(usuario_id) DO UPDATE SET doc = excluded.doc",
-        (usuario_id, json.dumps(doc, ensure_ascii=False)),
-    )
-    con.commit()
-    con.close()
+    with _conn().cursor() as cur:
+        cur.execute(
+            "INSERT INTO memoria (usuario_id, doc) VALUES (%s, %s)"
+            " ON CONFLICT (usuario_id) DO UPDATE SET doc = EXCLUDED.doc",
+            (usuario_id, psycopg2.extras.Json(doc)),
+        )
 
 
 def ler_mensagens(usuario_id, desde_id=0):
@@ -91,13 +120,13 @@ def ler_mensagens(usuario_id, desde_id=0):
     de quando a pessoa entrou). Assim a tela abre limpa a cada uso, mesmo com
     todo o historico ainda guardado no banco.
     """
-    con = sqlite3.connect(CAMINHO_DB)
-    linhas = con.execute(
-        "SELECT papel, conteudo FROM mensagens"
-        " WHERE usuario_id = ? AND id > ? ORDER BY id",
-        (usuario_id, desde_id),
-    ).fetchall()
-    con.close()
+    with _conn().cursor() as cur:
+        cur.execute(
+            "SELECT papel, conteudo FROM mensagens"
+            " WHERE usuario_id = %s AND id > %s ORDER BY id",
+            (usuario_id, desde_id),
+        )
+        linhas = cur.fetchall()
     return [{"papel": p, "conteudo": c} for (p, c) in linhas]
 
 
@@ -106,24 +135,20 @@ def ultimo_id(usuario_id):
 
     Serve de marco de inicio de sessao: tudo antes disso fica escondido da tela.
     """
-    con = sqlite3.connect(CAMINHO_DB)
-    linha = con.execute(
-        "SELECT MAX(id) FROM mensagens WHERE usuario_id = ?", (usuario_id,)
-    ).fetchone()
-    con.close()
+    with _conn().cursor() as cur:
+        cur.execute("SELECT MAX(id) FROM mensagens WHERE usuario_id = %s", (usuario_id,))
+        linha = cur.fetchone()
     return linha[0] or 0
 
 
 def salvar_mensagem(usuario_id, papel, conteudo):
     """Anexa uma mensagem (papel = 'user' ou 'assistant') ao historico."""
-    con = sqlite3.connect(CAMINHO_DB)
-    con.execute(
-        "INSERT INTO mensagens (usuario_id, papel, conteudo, criado_em)"
-        " VALUES (?, ?, ?, datetime('now'))",
-        (usuario_id, papel, conteudo),
-    )
-    con.commit()
-    con.close()
+    with _conn().cursor() as cur:
+        cur.execute(
+            "INSERT INTO mensagens (usuario_id, papel, conteudo, criado_em)"
+            " VALUES (%s, %s, %s, now())",
+            (usuario_id, papel, conteudo),
+        )
 
 
 def registrar_decisao(usuario_id, resumo, decisao):
@@ -143,13 +168,16 @@ def registrar_decisao(usuario_id, resumo, decisao):
 
 
 def contar_mensagens_usuario_hoje(usuario_id):
-    """Quantas mensagens o usuario ja mandou hoje (para o teto de uso)."""
-    con = sqlite3.connect(CAMINHO_DB)
-    total = con.execute(
-        "SELECT COUNT(*) FROM mensagens"
-        " WHERE usuario_id = ? AND papel = 'user'"
-        " AND date(criado_em) = date('now')",
-        (usuario_id,),
-    ).fetchone()[0]
-    con.close()
+    """Quantas mensagens o usuario ja mandou hoje (para o teto de uso).
+
+    Compara em UTC, mesmo criterio que o SQLite local usava (date('now')).
+    """
+    with _conn().cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM mensagens"
+            " WHERE usuario_id = %s AND papel = 'user'"
+            " AND (criado_em AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date",
+            (usuario_id,),
+        )
+        total = cur.fetchone()[0]
     return total
