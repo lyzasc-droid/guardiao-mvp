@@ -30,6 +30,7 @@ def _memoria_vazia():
         "desejos": [],       # itens ligados a vontade, sem problema concreto
         "compras": [],       # o que a pessoa ja comprou (para detectar duplicata)
         "analises": [],      # historico de vereditos dados
+        "lista_mercado": [],  # itens do dia a dia que a pessoa pediu pra anotar
     }
 
 

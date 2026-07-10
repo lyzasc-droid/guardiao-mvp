@@ -38,10 +38,11 @@ FERRAMENTA_MEMORIA = {
     "name": "salvar_memoria",
     "description": (
         "Grava o documento de memoria atualizado da pessoa. Envie o documento "
-        "INTEIRO ja atualizado (perfil, necessidades, desejos, compras, analises), "
-        "mantendo o que ja existia e acrescentando o novo. Use sempre que aprender "
-        "algo duravel: uma prioridade, uma necessidade, um desejo, uma compra feita, "
-        "ou o veredito que voce deu."
+        "INTEIRO ja atualizado (perfil, necessidades, desejos, compras, analises, "
+        "lista_mercado), mantendo o que ja existia e acrescentando o novo. Use "
+        "sempre que aprender algo duravel: uma prioridade, uma necessidade, um "
+        "desejo, uma compra feita, o veredito que voce deu, ou um item da lista "
+        "de mercado."
     ),
     "input_schema": {
         "type": "object",
@@ -50,13 +51,111 @@ FERRAMENTA_MEMORIA = {
                 "type": "string",
                 "description": (
                     "O documento de memoria completo, como uma string JSON com as "
-                    "chaves perfil, necessidades, desejos, compras e analises."
+                    "chaves perfil, necessidades, desejos, compras, analises e "
+                    "lista_mercado."
                 ),
             }
         },
         "required": ["memoria_json"],
     },
 }
+
+# Ferramenta leve da lista de mercado: mexe SO na lista, sem reescrever o
+# documento de memoria inteiro. Anotar "arroz" custava a reescrita de toda a
+# memoria em tokens de saida (a parte mais cara); com esta ferramenta a saida
+# do modelo e so a acao e os itens.
+#
+# Limite de tamanho por item (ver _aplicar_lista_mercado): item de mercado e
+# curto (1 a 3 palavras: "arroz", "sabão em pó"). Uma descricao longa e cheia
+# de detalhe e sinal de que e um bem duravel (eletrodomestico, eletronico),
+# nao mercado, mesmo que a pessoa tenha dito "lista". Essa checagem e um freio
+# no codigo, independente do modelo seguir a instrucao do metodo ou nao.
+_MAX_PALAVRAS_ITEM_MERCADO = 5
+_MAX_CARACTERES_ITEM_MERCADO = 35
+
+FERRAMENTA_LISTA_MERCADO = {
+    "name": "atualizar_lista_mercado",
+    "description": (
+        "Adiciona ou remove itens da lista de mercado da pessoa, ou esvazia a "
+        "lista. Mexe apenas na lista, o resto da memoria fica intacto. Use "
+        "SOMENTE para itens curtos de reposicao do dia a dia (comida, bebida, "
+        "limpeza, higiene: 'arroz', 'sabão em pó'). NUNCA use para "
+        "eletrodomestico, eletronico, movel ou qualquer bem duravel, mesmo que "
+        "a pessoa diga a palavra 'lista' -- itens assim sao rejeitados e "
+        "precisam ir pelo diagnostico normal (necessidades/desejos). NUNCA use "
+        "salvar_memoria pra mexer na lista de mercado."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "acao": {
+                "type": "string",
+                "enum": ["adicionar", "remover", "limpar"],
+                "description": "O que fazer com os itens.",
+            },
+            "itens": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Itens em minusculas, um por elemento (ex: ['arroz', 'sabão em pó']). "
+                    "Obrigatorio para adicionar e remover; ignorado em limpar."
+                ),
+            },
+        },
+        "required": ["acao"],
+    },
+}
+
+
+def _parece_bem_duravel(item):
+    """Heuristica de tamanho: item de mercado e curto (1 a 3 palavras). Uma
+    descricao longa, cheia de detalhe, e sinal de bem duravel (eletrodomestico,
+    eletronico) descrito por extenso, nao um item de reposicao do dia a dia.
+    """
+    return (
+        len(item) > _MAX_CARACTERES_ITEM_MERCADO
+        or len(item.split()) > _MAX_PALAVRAS_ITEM_MERCADO
+    )
+
+
+def _aplicar_lista_mercado(usuario_id, entrada):
+    """Executa a acao da ferramenta atualizar_lista_mercado direto no banco.
+    Devolve o texto de resultado que volta pro modelo (com a lista atualizada,
+    pra ele confirmar sem precisar adivinhar).
+    """
+    acao = entrada.get("acao")
+    itens = [i.strip() for i in entrada.get("itens", []) if isinstance(i, str) and i.strip()]
+    doc = mem.ler_memoria(usuario_id)
+    lista = doc.setdefault("lista_mercado", [])
+
+    if acao == "adicionar":
+        suspeitos = [i for i in itens if _parece_bem_duravel(i)]
+        if suspeitos:
+            return (
+                "REJEITADO: "
+                + ", ".join(suspeitos)
+                + " parece bem duravel (eletrodomestico/eletronico/movel), nao item de "
+                "mercado. Nao adicionei na lista. Trate como compra normal: faca o "
+                "diagnostico com os rotulos de sempre (Motivação, Clareza, Viabilidade "
+                "financeira etc), nao chame esta ferramenta de novo pra esse item."
+            )
+        ja_tinha = {i.lower() for i in lista}
+        for item in itens:
+            if item.lower() not in ja_tinha:
+                lista.append(item)
+                ja_tinha.add(item.lower())
+    elif acao == "remover":
+        tirar = {i.lower() for i in itens}
+        lista[:] = [i for i in lista if i.lower() not in tirar]
+    elif acao == "limpar":
+        lista.clear()
+    else:
+        return None
+
+    mem.salvar_memoria(usuario_id, doc)
+    if lista:
+        return "lista atualizada: " + ", ".join(lista)
+    return "lista atualizada: vazia"
 
 
 def _montar_mensagens(usuario_id, memoria, desde_id=0):
@@ -125,12 +224,17 @@ def responder(usuario_id, modelo=None, desde_id=0):
             # a resposta no meio antes de terminar.
             max_tokens=2000,
             system=system,
-            tools=[FERRAMENTA_MEMORIA],
+            tools=[FERRAMENTA_MEMORIA, FERRAMENTA_LISTA_MERCADO],
             messages=mensagens,
         )
 
         for bloco in resposta.content:
             if bloco.type == "text" and bloco.text.strip():
+                # As vezes o modelo escreve a resposta, chama salvar_memoria e
+                # depois escreve a MESMA frase de novo, o que aparecia duplicado
+                # na tela. Ignora o texto repetido.
+                if bloco.text.strip() in (p.strip() for p in partes_texto):
+                    continue
                 partes_texto.append(bloco.text)
 
         if resposta.stop_reason != "tool_use":
@@ -139,7 +243,9 @@ def responder(usuario_id, modelo=None, desde_id=0):
         mensagens.append({"role": "assistant", "content": resposta.content})
         resultados = []
         for bloco in resposta.content:
-            if bloco.type == "tool_use" and bloco.name == "salvar_memoria":
+            if bloco.type != "tool_use":
+                continue
+            if bloco.name == "salvar_memoria":
                 ok = _aplicar_salvar_memoria(usuario_id, bloco.input)
                 salvou_memoria = salvou_memoria or ok
                 resultados.append(
@@ -147,6 +253,22 @@ def responder(usuario_id, modelo=None, desde_id=0):
                         "type": "tool_result",
                         "tool_use_id": bloco.id,
                         "content": "memoria atualizada" if ok else "nao consegui ler o JSON",
+                        "is_error": not ok,
+                    }
+                )
+            elif bloco.name == "atualizar_lista_mercado":
+                resultado = _aplicar_lista_mercado(usuario_id, bloco.input)
+                # rejeitado = a chamada rodou, mas nada foi salvo (item parece
+                # bem duravel). Conta como erro pro modelo tentar outro caminho,
+                # e nao marca salvou_memoria (nada foi de fato gravado).
+                rejeitado = isinstance(resultado, str) and resultado.startswith("REJEITADO:")
+                ok = resultado is not None and not rejeitado
+                salvou_memoria = salvou_memoria or ok
+                resultados.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": bloco.id,
+                        "content": resultado if resultado is not None else "acao invalida",
                         "is_error": not ok,
                     }
                 )

@@ -8,6 +8,7 @@ import base64
 import html
 import os
 import re
+import unicodedata
 from pathlib import Path
 
 import streamlit as st
@@ -55,7 +56,65 @@ def _injetar_estilo_global():
 
 # Marca do produto: o simbolo (tijolinhos) da IAgilize, mais o lockup
 # "Guardião do Bolso" / "by IAgilize" com o tracinho laranja de assinatura.
-_ICONE_B64 = base64.b64encode((CAMINHO_ASSETS / "icone.png").read_bytes()).decode("ascii")
+# Usa a versao negativa (blocos brancos, bloco laranja preservado), pois o
+# fundo do app e escuro (COR_NAVY) e a versao navy original ficava sem
+# contraste. Recorte gerado a partir de icone.png trocando so os pixels navy
+# por off-white, preservando alpha e o bloco laranja (Design System, secao
+# "Logo para fundo escuro / versao negativa", fundo azul-marinho recomendado).
+CAMINHO_ICONE_NEGATIVO = CAMINHO_ASSETS / "icone-negativo.png"
+_ICONE_B64 = base64.b64encode(CAMINHO_ICONE_NEGATIVO.read_bytes()).decode("ascii")
+
+# Avatares do chat: o Streamlit usa uma "carinha" e um "robozinho" genericos
+# por padrao quando nenhum avatar e definido. Trocados por:
+# - Guardiao: circulo navy com o quadradinho laranja da marca no centro
+#   (elemento "ponto de decisao" do design system: o checkpoint antes da
+#   compra). Gerado por codigo em assets/avatar-guardiao.png, quadrado
+#   perfeito, sem a distorcao que o lockup retangular sofria no circulo.
+# - Pessoa: circulo discreto com a inicial do nome dela, gerado em tempo de
+#   execucao (cada pessoa ve a propria letra).
+AVATAR_ASSISTENTE = str(CAMINHO_ASSETS / "avatar-guardiao.png")
+
+_CACHE_AVATAR_USUARIO = {}
+
+
+def _avatar_usuario(usuario_id):
+    """Circulo cinza-azulado com a inicial do nome da pessoa, na paleta da
+    marca. Gerado uma vez por nome e guardado em cache na memoria do processo.
+    Retorna uma imagem PIL (aceita direto por st.chat_message).
+    """
+    inicial = (usuario_id or "?").strip()[:1].upper() or "?"
+    if inicial in _CACHE_AVATAR_USUARIO:
+        return _CACHE_AVATAR_USUARIO[inicial]
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    S = 512  # desenha grande e reduz, pra borda e letra sairem suaves
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse([4, 4, S - 4, S - 4], fill=(42, 53, 80, 255), outline=(255, 255, 255, 46), width=6)
+
+    # fonte em negrito: tenta as do sistema (Mac local, Linux no deploy) e,
+    # em ultimo caso, usa a padrao do PIL
+    fonte = None
+    for caminho in (
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ):
+        try:
+            fonte = ImageFont.truetype(caminho, int(S * 0.5))
+            break
+        except OSError:
+            continue
+    if fonte is None:
+        fonte = ImageFont.load_default(size=int(S * 0.5))
+
+    caixa = d.textbbox((0, 0), inicial, font=fonte)
+    lw, lh = caixa[2] - caixa[0], caixa[3] - caixa[1]
+    d.text(((S - lw) / 2 - caixa[0], (S - lh) / 2 - caixa[1]), inicial, font=fonte, fill=(247, 247, 242, 255))
+
+    img = img.resize((128, 128), Image.LANCZOS)
+    _CACHE_AVATAR_USUARIO[inicial] = img
+    return img
 
 
 def _logo_html(altura_px, centralizado=False):
@@ -391,6 +450,153 @@ def _autofoco(seletor):
     )
 
 
+# Lista de mercado: operacao de armazenamento puro, 100% em codigo. Qualquer
+# mensagem que mencione "lista" e tratada aqui, sem passar pelo modelo: sem
+# custo, sem follow-up de pendencias, sem mistura com o fluxo de decisao de
+# compra. Incluir, tirar, limpar e mostrar sao operacoes de banco.
+_RE_ADICIONAR_LISTA = re.compile(
+    r"\b(anota|anote|poe|põe|bota|bote|adiciona|adicione|coloca|coloque|inclui|inclua|acrescenta|acrescente)\b"
+)
+_RE_REMOVER_LISTA = re.compile(
+    r"\b(tira|tire|remove|remova|risca|risque|apaga|apague|exclui|exclua|comprei)\b"
+)
+_RE_LIMPAR_LISTA = re.compile(r"\b(limpa|limpe|zera|zere|esvazia|esvazie)\b|comprei tudo")
+
+# Pedacos que nao sao item: o proprio comando, a referencia a lista e muletas
+# de fala ("ai", "pra mim", "por favor"). Removidos antes de extrair os itens.
+_RE_RUIDO_LISTA = re.compile(
+    r"\b(anota|anote|poe|põe|bota|bote|adiciona|adicione|coloca|coloque|inclui|inclua"
+    r"|acrescenta|acrescente|tira|tire|remove|remova|risca|risque|apaga|apague|exclui|exclua"
+    r"|comprei|ja|já|na|da|a|o|minha|lista|de|do|mercado|compras|ai|aí|la|lá"
+    r"|pra|para|mim|por|favor|também|tambem|e?nt[aã]o)\b"
+)
+
+
+def _sem_acento(texto):
+    return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+
+
+def _extrair_itens_lista(texto):
+    """Extrai os itens de uma frase de lista: tira o comando e as muletas,
+    depois separa por virgula e "e". Ex: "anota arroz, feijão e sabão em pó
+    na lista" vira ["arroz", "feijão", "sabão em pó"].
+    """
+    limpo = texto.replace(":", " ").replace(";", ",")
+    partes = re.split(r",| e ", limpo)
+    itens = []
+    for parte in partes:
+        parte = _RE_RUIDO_LISTA.sub(" ", parte)
+        parte = re.sub(r"\s+", " ", parte).strip(" .!?")
+        if parte:
+            itens.append(parte)
+    return itens
+
+
+def _resposta_lista_mercado(usuario_id, entrada):
+    """Trata QUALQUER pedido de lista de mercado direto no banco, sem modelo.
+    Devolve o texto da resposta, ou None quando a mensagem nao e sobre a lista
+    (ai segue o fluxo normal de decisao de compra pelo modelo).
+    """
+    texto = entrada.lower().strip()
+    if "lista" not in texto:
+        return None
+
+    doc = mem.ler_memoria(usuario_id)
+    lista = doc.setdefault("lista_mercado", [])
+
+    # Limpar vem antes de remover: "limpa a lista" nao pode cair no remover.
+    if _RE_LIMPAR_LISTA.search(texto):
+        lista.clear()
+        mem.salvar_memoria(usuario_id, doc)
+        return "Lista de mercado esvaziada."
+
+    if _RE_ADICIONAR_LISTA.search(texto):
+        itens = _extrair_itens_lista(texto)
+        if not itens:
+            return "Não entendi quais itens anotar. Fala assim: anota arroz e feijão na lista."
+        # Item descrito com muitos detalhes nao e mercado, e bem duravel
+        # (eletrodomestico, eletronico) falado por extenso. Nao adiciona:
+        # devolve None e deixa cair no fluxo normal (modelo faz o diagnostico
+        # de compra de verdade, com rotulos).
+        if any(cerebro._parece_bem_duravel(i) for i in itens):
+            return None
+        ja_tinha = {_sem_acento(i.lower()) for i in lista}
+        novos, repetidos = [], []
+        for item in itens:
+            chave = _sem_acento(item.lower())
+            if chave in ja_tinha:
+                repetidos.append(item)
+            else:
+                lista.append(item)
+                ja_tinha.add(chave)
+                novos.append(item)
+        mem.salvar_memoria(usuario_id, doc)
+        resposta = ""
+        if novos:
+            resposta = f"Anotado: {', '.join(novos)}. Na lista: {len(lista)} " + (
+                "item." if len(lista) == 1 else "itens."
+            )
+        if repetidos:
+            resposta = (resposta + " " if resposta else "") + f"Já estava na lista: {', '.join(repetidos)}."
+        return resposta
+
+    if _RE_REMOVER_LISTA.search(texto):
+        itens = _extrair_itens_lista(texto)
+        if not itens:
+            return "Não entendi o que tirar. Fala assim: tira o arroz da lista."
+        tirados, nao_achados = [], []
+        for item in itens:
+            chave = _sem_acento(item.lower())
+            achou = None
+            for salvo in lista:
+                chave_salvo = _sem_acento(salvo.lower())
+                if chave == chave_salvo or chave in chave_salvo or chave_salvo in chave:
+                    achou = salvo
+                    break
+            if achou:
+                lista.remove(achou)
+                tirados.append(achou)
+            else:
+                nao_achados.append(item)
+        mem.salvar_memoria(usuario_id, doc)
+        resposta = ""
+        if tirados:
+            fica = ", ".join(lista) if lista else "nada, lista vazia"
+            resposta = f"Tirei: {', '.join(tirados)}. Fica: {fica}."
+        if nao_achados:
+            resposta = (resposta + " " if resposta else "") + f"Não achei na lista: {', '.join(nao_achados)}."
+        return resposta
+
+    # Sem verbo de mudanca: e leitura ("me manda a lista", "o que tem na lista?").
+    if not lista:
+        return "Sua lista de mercado está vazia."
+    return "\n".join(f"- {item}" for item in lista)
+
+
+def _processar_entrada(usuario_id, entrada, desde_id):
+    """Fluxo comum das duas telas ao receber uma mensagem: tenta o atalho da
+    lista de mercado (sem custo, nao conta no teto diario) e, se nao for isso,
+    segue pro modelo respeitando o teto de uso.
+    """
+    atalho = _resposta_lista_mercado(usuario_id, entrada)
+    if atalho is not None:
+        mem.salvar_mensagem(usuario_id, "user", entrada)
+        mem.salvar_mensagem(usuario_id, "assistant", atalho)
+        st.rerun()
+    if mem.contar_mensagens_usuario_hoje(usuario_id) >= LIMITE_DIA:
+        st.warning(
+            "Você já conversou bastante comigo hoje. Volta amanhã que eu te espero, "
+            "com tudo que já lembro de você guardado."
+        )
+        return
+    mem.salvar_mensagem(usuario_id, "user", entrada)
+    with st.spinner("pensando..."):
+        modelo = st.session_state.get("modelo", cerebro.MODELO)
+        resposta = cerebro.responder(usuario_id, modelo, desde_id)
+    mem.salvar_mensagem(usuario_id, "assistant", resposta)
+    st.rerun()
+
+
 def tela_de_entrada():
     """Pede um nome para identificar a pessoa e manter a memoria entre sessoes."""
     _cabecalho_logo()
@@ -442,6 +648,7 @@ def barra_lateral(usuario_id):
             ("Necessidades abertas", "necessidades"),
             ("Desejos", "desejos"),
             ("Compras recentes", "compras"),
+            ("Lista de mercado", "lista_mercado"),
         ]:
             itens = memoria.get(chave, [])
             if itens:
@@ -453,7 +660,7 @@ def barra_lateral(usuario_id):
                         rotulo = str(item)
                     st.write(f"- {rotulo}")
         if not perfil.get("prioridade") and not any(
-            memoria.get(c) for c in ("necessidades", "desejos", "compras")
+            memoria.get(c) for c in ("necessidades", "desejos", "compras", "lista_mercado")
         ):
             st.caption("Ainda estou te conhecendo. Conversa comigo que eu vou lembrando.")
 
@@ -491,18 +698,7 @@ def _tela_boas_vindas(usuario_id, desde_id):
 
     entrada = digitado or falado
     if entrada:
-        if mem.contar_mensagens_usuario_hoje(usuario_id) >= LIMITE_DIA:
-            st.warning(
-                "Você já conversou bastante comigo hoje. Volta amanhã que eu te espero, "
-                "com tudo que já lembro de você guardado."
-            )
-        else:
-            mem.salvar_mensagem(usuario_id, "user", entrada)
-            with st.spinner("pensando..."):
-                modelo = st.session_state.get("modelo", cerebro.MODELO)
-                resposta = cerebro.responder(usuario_id, modelo, desde_id)
-            mem.salvar_mensagem(usuario_id, "assistant", resposta)
-            st.rerun()
+        _processar_entrada(usuario_id, entrada, desde_id)
 
 
 def tela_do_chat():
@@ -520,7 +716,8 @@ def tela_do_chat():
     barra_lateral(usuario_id)
 
     for m in historico:
-        with st.chat_message(m["papel"]):
+        avatar = AVATAR_ASSISTENTE if m["papel"] == "assistant" else _avatar_usuario(usuario_id)
+        with st.chat_message(m["papel"], avatar=avatar):
             if m["papel"] == "assistant":
                 mostrar_resposta(m["conteudo"])
             else:
@@ -577,16 +774,21 @@ def tela_do_chat():
     # A entrada pode vir da voz ou do teclado.
     entrada = digitado or falado
     if entrada:
-        if mem.contar_mensagens_usuario_hoje(usuario_id) >= LIMITE_DIA:
+        atalho = _resposta_lista_mercado(usuario_id, entrada)
+        if atalho is not None:
+            mem.salvar_mensagem(usuario_id, "user", entrada)
+            mem.salvar_mensagem(usuario_id, "assistant", atalho)
+            st.rerun()
+        elif mem.contar_mensagens_usuario_hoje(usuario_id) >= LIMITE_DIA:
             st.warning(
                 "Você já conversou bastante comigo hoje. Volta amanhã que eu te espero, "
                 "com tudo que já lembro de você guardado."
             )
         else:
             mem.salvar_mensagem(usuario_id, "user", entrada)
-            with st.chat_message("user"):
+            with st.chat_message("user", avatar=_avatar_usuario(usuario_id)):
                 st.markdown(entrada)
-            with st.chat_message("assistant"):
+            with st.chat_message("assistant", avatar=AVATAR_ASSISTENTE):
                 with st.spinner("pensando..."):
                     modelo = st.session_state.get("modelo", cerebro.MODELO)
                     resposta = cerebro.responder(usuario_id, modelo, desde_id)
