@@ -155,6 +155,6 @@ Detalhes completos em `benchmark/benchmark-concorrentes.md`. Resumo:
 
 ## 10. Próximos passos
 
-- Enviar a atualização (tema escuro + cartões de vidro fosco) pro GitHub (push via VS Code) pra o app no ar pegar a mudança.
+- 2026-07-09: enviado pro GitHub (commit `653012c`, branch `main`) tudo desta sessão: logo negativa, avatares do chat, lista de mercado e o critério de categorias. Streamlit Community Cloud redeploy automático a partir do push.
 - Decidir com a fundadora se aplica o resto do Design System agora (tipografia Sora/Manrope, selo de veredito nomeado nos cartões, correção do hex do azul de informação) ou deixa pra depois.
 - Quando validar com usuários: migrar pra banco de dados externo (memória permanente) e adicionar login de verdade (privacidade por pessoa). Aí sim reconstruir front em Next.js se quiser rodar na Vercel.
