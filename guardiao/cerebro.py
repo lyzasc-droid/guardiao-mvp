@@ -469,6 +469,30 @@ def responder(usuario_id, modelo=None, desde_id=0):
     return texto_final
 
 
+def _normalizar_precos(doc):
+    """Rede de seguranca: mesmo com a instrucao de usar registrar_preco, o
+    modelo as vezes escreve "precos" na mao via salvar_memoria, com um
+    formato proprio (ex: "valor" em vez de "preco", sem "uso_continuo").
+    Isso quebrava a barra lateral com KeyError em producao. Conserta o
+    formato de cada registro em vez de confiar que o modelo acertou.
+    """
+    precos = doc.get("precos")
+    if not isinstance(precos, list):
+        return
+    for registro in precos:
+        if not isinstance(registro, dict):
+            continue
+        if "preco" not in registro and "valor" in registro:
+            registro["preco"] = registro.pop("valor")
+        try:
+            registro["preco"] = float(registro.get("preco", 0))
+        except (TypeError, ValueError):
+            registro["preco"] = 0
+        registro.setdefault("local", "")
+        registro.setdefault("data", datetime.date.today().isoformat())
+        registro.setdefault("uso_continuo", False)
+
+
 def _aplicar_salvar_memoria(usuario_id, entrada):
     """Le o JSON enviado pelo modelo e grava na memoria. Devolve True se deu certo."""
     bruto = entrada.get("memoria_json", "")
@@ -478,6 +502,7 @@ def _aplicar_salvar_memoria(usuario_id, entrada):
         return False
     if not isinstance(doc, dict):
         return False
+    _normalizar_precos(doc)
     mem.salvar_memoria(usuario_id, doc)
     return True
 

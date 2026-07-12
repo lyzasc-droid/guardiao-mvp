@@ -680,7 +680,14 @@ def barra_lateral(usuario_id):
                     ultimos[str(p["item"]).lower()] = p
             st.markdown("**Preços de referência**")
             for p in ultimos.values():
-                valor = f"R\\$ {p['preco']:.2f}".replace(".", ",")
+                # .get() com fallback pro "valor": registro pode ter vindo de um
+                # salvar_memoria antigo, escrito com formato diferente do esperado.
+                preco_num = p.get("preco", p.get("valor", 0)) or 0
+                try:
+                    preco_num = float(preco_num)
+                except (TypeError, ValueError):
+                    preco_num = 0
+                valor = f"R\\$ {preco_num:.2f}".replace(".", ",")
                 onde = f", {p['local']}" if p.get("local") else ""
                 quando = f"{p['data'][8:10]}/{p['data'][5:7]}" if p.get("data") else ""
                 # Marca visualmente os itens de uso continuo (remedio, cosmetico
