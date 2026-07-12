@@ -68,6 +68,7 @@ def _memoria_vazia():
         "compras": [],       # o que a pessoa ja comprou (para detectar duplicata)
         "analises": [],      # historico de vereditos dados
         "lista_mercado": [],  # itens do dia a dia que a pessoa pediu pra anotar
+        "precos": [],        # historico de precos PAGOS: {item, preco, local, data}
     }
 
 

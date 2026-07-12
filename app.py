@@ -656,11 +656,42 @@ def barra_lateral(usuario_id):
                 for item in itens:
                     if isinstance(item, dict):
                         rotulo = item.get("item") or item.get("titulo") or item.get("nome") or str(item)
+                        # Cotacoes coletadas durante a cacada de preco do item.
+                        cotacoes = item.get("cotacoes") or []
+                        if cotacoes:
+                            # O cifrao precisa de escape: dois "$" na mesma linha
+                            # fazem o Markdown do Streamlit virar formula matematica.
+                            vistas = "; ".join(
+                                f"R\\$ {c['preco']:.2f}".replace(".", ",")
+                                + (f" ({c['local']})" if c.get("local") else "")
+                                for c in cotacoes
+                            )
+                            rotulo = f"{rotulo} (cotações: {vistas})"
                     else:
                         rotulo = str(item)
                     st.write(f"- {rotulo}")
+
+        # Precos de referencia: o ultimo preco PAGO de cada item, com local e data.
+        precos = memoria.get("precos", [])
+        if precos:
+            ultimos = {}
+            for p in precos:  # lista cronologica: o ultimo registro do item vence
+                if isinstance(p, dict) and p.get("item"):
+                    ultimos[str(p["item"]).lower()] = p
+            st.markdown("**Preços de referência**")
+            for p in ultimos.values():
+                valor = f"R\\$ {p['preco']:.2f}".replace(".", ",")
+                onde = f", {p['local']}" if p.get("local") else ""
+                quando = f"{p['data'][8:10]}/{p['data'][5:7]}" if p.get("data") else ""
+                # Marca visualmente os itens de uso continuo (remedio, cosmetico
+                # de reposicao), que sao os que disparam o atalho de recompra.
+                selo = " 🔁" if p.get("uso_continuo") else ""
+                st.write(f"- {p['item']}: {valor}{onde} ({quando}){selo}")
+            if any(p.get("uso_continuo") for p in ultimos.values()):
+                st.caption("🔁 = uso contínuo, reposição sem passar pelo diagnóstico de novo")
+
         if not perfil.get("prioridade") and not any(
-            memoria.get(c) for c in ("necessidades", "desejos", "compras", "lista_mercado")
+            memoria.get(c) for c in ("necessidades", "desejos", "compras", "lista_mercado", "precos")
         ):
             st.caption("Ainda estou te conhecendo. Conversa comigo que eu vou lembrando.")
 

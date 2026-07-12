@@ -39,10 +39,10 @@ FERRAMENTA_MEMORIA = {
     "description": (
         "Grava o documento de memoria atualizado da pessoa. Envie o documento "
         "INTEIRO ja atualizado (perfil, necessidades, desejos, compras, analises, "
-        "lista_mercado), mantendo o que ja existia e acrescentando o novo. Use "
-        "sempre que aprender algo duravel: uma prioridade, uma necessidade, um "
-        "desejo, uma compra feita, o veredito que voce deu, ou um item da lista "
-        "de mercado."
+        "lista_mercado, precos), mantendo o que ja existia e acrescentando o novo. "
+        "Use sempre que aprender algo duravel: uma prioridade, uma necessidade, um "
+        "desejo, uma compra feita, ou o veredito que voce deu. Para lista de "
+        "mercado use atualizar_lista_mercado; para precos use registrar_preco."
     ),
     "input_schema": {
         "type": "object",
@@ -51,8 +51,8 @@ FERRAMENTA_MEMORIA = {
                 "type": "string",
                 "description": (
                     "O documento de memoria completo, como uma string JSON com as "
-                    "chaves perfil, necessidades, desejos, compras, analises e "
-                    "lista_mercado."
+                    "chaves perfil, necessidades, desejos, compras, analises, "
+                    "lista_mercado e precos."
                 ),
             }
         },
@@ -105,6 +105,169 @@ FERRAMENTA_LISTA_MERCADO = {
         "required": ["acao"],
     },
 }
+
+
+# Ferramenta leve de precos: preco PAGO vira referencia permanente (historico
+# em doc["precos"]); preco so VISTO (cotacao) fica anotado dentro do item
+# correspondente em necessidades/desejos, morrendo junto com a decisao.
+# A data e sempre colocada pelo codigo, nunca pelo modelo.
+FERRAMENTA_PRECO = {
+    "name": "registrar_preco",
+    "description": (
+        "Registra um preco que a pessoa mencionou para um item concreto. "
+        "acao 'pago': ela COMPROU e pagou esse valor; vira o preco de referencia "
+        "permanente do item. acao 'cotacao': ela apenas VIU ou orcou esse valor "
+        "para um item que esta considerando comprar; fica anotado dentro do item "
+        "em necessidades/desejos. A data de hoje e adicionada automaticamente. "
+        "Nunca invente valor nem local: registre somente o que a pessoa disse."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "acao": {
+                "type": "string",
+                "enum": ["pago", "cotacao"],
+                "description": "pago = comprou por esse valor; cotacao = so viu o preco.",
+            },
+            "item": {
+                "type": "string",
+                "description": "Nome curto do item (ex: 'cotonete', 'vitanol').",
+            },
+            "preco": {
+                "type": "number",
+                "description": "Valor em reais.",
+            },
+            "local": {
+                "type": "string",
+                "description": "Onde pagou ou viu (mercado, farmacia, site). Omitir se a pessoa nao disse.",
+            },
+            "uso_continuo": {
+                "type": "boolean",
+                "description": (
+                    "Somente para acao 'pago'. true quando o contexto indica item de uso "
+                    "recorrente (remedio de uso continuo, cosmetico que ela usa sempre, "
+                    "assinatura, algo que ela vai precisar repor). false ou omitido para "
+                    "compra pontual/unica (eletrodomestico, movel, presente). Decida pelo "
+                    "que a pessoa disse, nunca pergunte so pra preencher isso."
+                ),
+            },
+        },
+        "required": ["acao", "item", "preco"],
+    },
+}
+
+
+def _formatar_reais(valor):
+    return ("R$ %.2f" % valor).replace(".", ",")
+
+
+def _referencia_do_item(doc, item):
+    """Ultimo preco PAGO registrado para o item (casamento parcial, sem
+    diferenciar maiuscula). E o preco de referencia vivo. None se nao houver.
+    """
+    chave = item.lower()
+    achado = None
+    for registro in doc.get("precos", []):
+        nome = str(registro.get("item", "")).lower()
+        if chave == nome or chave in nome or nome in chave:
+            achado = registro  # a lista e cronologica, o ultimo casamento vence
+    return achado
+
+
+def _aplicar_registrar_preco(usuario_id, entrada):
+    """Executa a ferramenta registrar_preco direto no banco. Devolve o texto de
+    resultado pro modelo, ja com a comparacao contra a referencia existente,
+    pra ele orientar a pessoa sem precisar calcular nada.
+    """
+    acao = entrada.get("acao")
+    item = (entrada.get("item") or "").strip()
+    local = (entrada.get("local") or "").strip()
+    try:
+        preco = float(entrada.get("preco"))
+    except (TypeError, ValueError):
+        return None
+    if not item or preco <= 0 or acao not in ("pago", "cotacao"):
+        return None
+
+    doc = mem.ler_memoria(usuario_id)
+    hoje = datetime.date.today().isoformat()
+    referencia = _referencia_do_item(doc, item)
+    onde = f" ({local})" if local else ""
+
+    if referencia:
+        contexto = (
+            f" Referencia anterior: {_formatar_reais(referencia['preco'])}"
+            f" em {referencia.get('local') or 'local nao informado'}, {referencia['data']}."
+        )
+    else:
+        contexto = " Sem referencia anterior desse item."
+
+    if acao == "pago":
+        uso_continuo = bool(entrada.get("uso_continuo"))
+        doc.setdefault("precos", []).append(
+            {"item": item, "preco": preco, "local": local, "data": hoje, "uso_continuo": uso_continuo}
+        )
+        # Compra fecha o ciclo do item: sai de necessidades/desejos (as
+        # cotacoes ja cumpriram o papel) e entra em compras. Tudo numa
+        # chamada so, sem depender do modelo reescrever o documento inteiro.
+        chave = item.lower()
+        movido = None
+        for lista in ("necessidades", "desejos"):
+            itens = doc.get(lista, [])
+            for registro in list(itens):
+                nome = str(registro.get("item", "") if isinstance(registro, dict) else registro)
+                n = nome.lower()
+                if chave == n or chave in n or n in chave:
+                    itens.remove(registro)
+                    movido = nome
+                    break
+            if movido:
+                break
+        doc.setdefault("compras", []).append(
+            {"item": movido or item, "preco": preco, "local": local, "data": hoje}
+        )
+        mem.salvar_memoria(usuario_id, doc)
+        extra = f" Item '{movido}' movido de necessidades/desejos para compras." if movido else ""
+        return (
+            f"preco pago registrado: {item} {_formatar_reais(preco)}{onde}."
+            + contexto
+            + " Esse valor e a nova referencia."
+            + extra
+        )
+
+    # cotacao: anexa ao item em necessidades/desejos (cria em desejos se nao existir)
+    chave = item.lower()
+    alvo = None
+    for lista in ("necessidades", "desejos"):
+        itens = doc.get(lista, [])
+        for i, registro in enumerate(itens):
+            nome = str(registro.get("item", "") if isinstance(registro, dict) else registro)
+            n = nome.lower()
+            if chave == n or chave in n or n in chave:
+                if not isinstance(registro, dict):
+                    registro = {"item": nome}
+                    itens[i] = registro
+                alvo = registro
+                break
+        if alvo:
+            break
+    if alvo is None:
+        alvo = {"item": item, "observacao": "criado ao registrar uma cotação, clareza pendente"}
+        doc.setdefault("desejos", []).append(alvo)
+    alvo.setdefault("cotacoes", []).append({"preco": preco, "local": local, "data": hoje})
+    mem.salvar_memoria(usuario_id, doc)
+
+    outras = [c for c in alvo["cotacoes"][:-1]]
+    if outras:
+        listadas = "; ".join(
+            f"{_formatar_reais(c['preco'])} em {c.get('local') or 'local nao informado'} ({c['data']})"
+            for c in outras
+        )
+        contexto += f" Outras cotacoes desse item: {listadas}."
+    return (
+        f"cotacao registrada em '{alvo['item']}': {_formatar_reais(preco)}{onde}."
+        + contexto
+    )
 
 
 def _parece_bem_duravel(item):
@@ -224,7 +387,7 @@ def responder(usuario_id, modelo=None, desde_id=0):
             # a resposta no meio antes de terminar.
             max_tokens=2000,
             system=system,
-            tools=[FERRAMENTA_MEMORIA, FERRAMENTA_LISTA_MERCADO],
+            tools=[FERRAMENTA_MEMORIA, FERRAMENTA_LISTA_MERCADO, FERRAMENTA_PRECO],
             messages=mensagens,
         )
 
@@ -253,6 +416,18 @@ def responder(usuario_id, modelo=None, desde_id=0):
                         "type": "tool_result",
                         "tool_use_id": bloco.id,
                         "content": "memoria atualizada" if ok else "nao consegui ler o JSON",
+                        "is_error": not ok,
+                    }
+                )
+            elif bloco.name == "registrar_preco":
+                resultado = _aplicar_registrar_preco(usuario_id, bloco.input)
+                ok = resultado is not None
+                salvou_memoria = salvou_memoria or ok
+                resultados.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": bloco.id,
+                        "content": resultado if ok else "entrada invalida (item, preco > 0 e acao pago/cotacao sao obrigatorios)",
                         "is_error": not ok,
                     }
                 )
