@@ -2,7 +2,7 @@
 
 > Cérebro do projeto. Fonte única de verdade sobre o Guardião.
 > Este arquivo é lido no início de cada sessão e atualizado ao fim dela.
-> Última atualização: 2026-07-13 (Fase 2 do painel implementada e testada, ainda não enviada pro GitHub).
+> Última atualização: 2026-07-14 (Fase 2 do painel enviada pro GitHub, redeploy automático em andamento no Streamlit Cloud).
 
 ---
 
@@ -226,6 +226,8 @@ Detalhes completos em `benchmark/benchmark-concorrentes.md`. Resumo:
   - Pegadinha registrada: o Streamlit recarrega `app.py` ao salvar, mas NÃO recarrega módulos importados (`guardiao/painel.py`) sem watchdog; a função nova só apareceu depois de reiniciar o servidor (o `KeyError: gasto_diario` no primeiro teste era isso, não bug de código).
   - Revalidado com conta fictícia (`camila-ferraz`, removida depois) em desktop (1280px, mosaico completo) e janela estreita (711px, tiles empilhados corretamente).
   - Ainda não enviado pro GitHub. Falta decidir com a fundadora se sobe junto com a fundação de dados (pendente desde 07/12) ou em pushes separados.
+- 2026-07-14 (aprovação + ajuste de copy): fundadora aprovou o mosaico da quarta rodada ("pra essa primeira versão ficou bom"). Único ponto: a palavra "desbloquear" nos padrões sem dado suficiente soava como prêmio, mas o padrão por trás pode ser uma notícia ruim (compra por impulso, arrependimento) — estranho tratar isso como conquista. Trocado "Continue usando pra desbloquear" por "Ainda não tenho dado suficiente aqui" nos dois pontos do `_tile_padrao_html`, mantendo o anel cinza de progresso (a fundadora não pediu pra tirar o anel, só a palavra).
+- 2026-07-14: **enviado pro GitHub** (commit `005ed1c`, branch `main`), fundação de dados (12/07) e painel financeiro (13-14/07) juntos num push só. Streamlit Community Cloud redeploy automático a partir do push. Ainda não confirmado visualmente em produção (só testado local até aqui).
 
 ## 10. Próximos passos
 
