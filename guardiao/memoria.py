@@ -62,7 +62,7 @@ def _conn():
 def _memoria_vazia():
     """Estrutura inicial da memoria de um usuario novo."""
     return {
-        "perfil": {"nome": None, "prioridade": None, "guardrails": []},
+        "perfil": {"nome": None, "prioridade": None, "guardrails": [], "limite_mensal": None},
         "necessidades": [],  # itens que resolvem um problema concreto
         "desejos": [],       # itens ligados a vontade, sem problema concreto
         "compras": [],       # o que a pessoa ja comprou (para detectar duplicata)

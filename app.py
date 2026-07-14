@@ -5,7 +5,9 @@ Precisa de ANTHROPIC_API_KEY no arquivo .env (ou no ambiente).
 """
 
 import base64
+import datetime
 import html
+import itertools
 import os
 import re
 import unicodedata
@@ -18,6 +20,7 @@ from streamlit_mic_recorder import speech_to_text
 
 from guardiao import cerebro
 from guardiao import memoria as mem
+from guardiao import painel
 
 CAMINHO_ASSETS = Path(__file__).resolve().parent / "assets"
 
@@ -619,6 +622,11 @@ def barra_lateral(usuario_id):
     """Memoria (so leitura) + seletor de modelo para testes."""
     memoria = mem.ler_memoria(usuario_id)
     with st.sidebar:
+        if st.button("📊 Meu painel", use_container_width=True):
+            st.session_state.tela = "painel"
+            st.rerun()
+        st.divider()
+
         # Reiniciar analise: limpa a tela e comeca do zero, mantendo tudo que
         # o Guardiao ja lembra da pessoa (a memoria por tras nao e apagada).
         if st.button("🔄 Reiniciar análise", use_container_width=True):
@@ -644,6 +652,21 @@ def barra_lateral(usuario_id):
         if perfil.get("prioridade"):
             st.markdown("**Sua prioridade**")
             st.write(perfil["prioridade"])
+
+        limite = perfil.get("limite_mensal")
+        if limite:
+            mes_atual = datetime.date.today().isoformat()[:7]  # "AAAA-MM"
+            gasto_mes = sum(
+                float(c.get("preco") or 0)
+                for c in memoria.get("compras", [])
+                if isinstance(c, dict) and str(c.get("data", "")).startswith(mes_atual)
+            )
+            st.markdown("**Limite mensal**")
+            limite_fmt = f"R\\$ {limite:.2f}".replace(".", ",")
+            gasto_fmt = f"R\\$ {gasto_mes:.2f}".replace(".", ",")
+            st.write(f"{gasto_fmt} de {limite_fmt} gastos esse mês")
+            st.progress(min(gasto_mes / limite, 1.0))
+
         for titulo, chave in [
             ("Necessidades abertas", "necessidades"),
             ("Desejos", "desejos"),
@@ -737,6 +760,462 @@ def _tela_boas_vindas(usuario_id, desde_id):
     entrada = digitado or falado
     if entrada:
         _processar_entrada(usuario_id, entrada, desde_id)
+
+
+def _reais(valor):
+    # Sem o escape "R\$" usado no markdown puro (barra_lateral): aqui o valor
+    # sempre entra dentro de HTML bruto (os tiles do painel), que nao reprocessa
+    # esse escape e mostraria a barra invertida literal na tela.
+    return f"R$ {valor:.2f}".replace(".", ",")
+
+
+# Par (inicio, fim) de cada cor de destaque, usado nos aneis em SVG e nos
+# numeros grandes com texto em gradiente. Da o acabamento "moderninho" pedido
+# pela fundadora em vez de traco solido de uma cor so.
+_GRADIENTES = {
+    COR_LARANJA: ("#FF8A00", "#FFD166"),
+    COR_VERMELHO: ("#EF4444", "#F59E0B"),
+    COR_AMARELO: ("#F5A623", "#FFD166"),
+    COR_VERDE: ("#16A34A", "#5EEAD4"),
+    COR_AZUL_INFO: ("#3B82F6", "#A855F7"),
+}
+
+# Contador global de ids de gradiente SVG: cada anel/donut na tela precisa de
+# um id unico, senao o navegador reusa o primeiro <linearGradient> com aquele
+# id e todos os cartoes ficam com a cor do primeiro gradiente desenhado.
+_contador_gradiente = itertools.count()
+
+
+# O painel inteiro e UM bloco HTML com CSS grid de 12 colunas (mosaico estilo
+# "bento", como a referencia de dashboard fintech que a fundadora mandou).
+# st.columns nao serve aqui: o espacamento dele e largo e as caixas saem
+# todas do mesmo tamanho, matando a assimetria pedida.
+_CSS_PAINEL = (
+    "<style>"
+    # O container central do Streamlit e estreito (~730px) por padrao, bom pro
+    # chat mas sufocante pro mosaico. Alarga so enquanto o painel esta na tela
+    # (este <style> so e renderizado na tela do painel).
+    '[data-testid="stMainBlockContainer"]{max-width:1180px;}'
+    ".gpainel{display:grid; grid-template-columns:repeat(12,1fr); gap:14px;}"
+    ".gtile{position:relative; overflow:hidden; "
+    "background:linear-gradient(160deg, rgba(255,255,255,0.09), rgba(255,255,255,0.02)); "
+    f"border:1px solid {VIDRO_BORDA}; border-radius:20px; padding:18px 20px; "
+    "box-shadow:0 14px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05); "
+    "backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);}"
+    f".gsec{{grid-column:1/-1; color:{COR_LARANJA}; font-weight:700; font-size:12px; "
+    "text-transform:uppercase; letter-spacing:0.8px; margin:10px 0 -4px;}"
+    ".sp3{grid-column:span 3}.sp4{grid-column:span 4}.sp6{grid-column:span 6}"
+    ".sp8{grid-column:span 8}.sp12{grid-column:span 12}"
+    # Telas estreitas (celular): pares viram coluna unica, minis viram 2 por linha.
+    "@media (max-width:820px){.sp3{grid-column:span 6 !important}"
+    ".sp4,.sp6,.sp8{grid-column:span 12 !important}}"
+    "</style>"
+)
+
+
+def _tile(span, conteudo, accent=None):
+    """Um cartao do mosaico. accent liga o brilho colorido desfocado no canto;
+    sem accent o cartao fica apagado (usado nos padroes ainda bloqueados)."""
+    glow = ""
+    if accent:
+        glow = (
+            f'<div style="position:absolute; top:-40px; right:-40px; width:140px; height:140px; '
+            f'background:{accent}; opacity:0.17; filter:blur(36px); border-radius:50%; '
+            f'pointer-events:none;"></div>'
+        )
+    return (
+        f'<div class="gtile sp{span}">{glow}'
+        f'<div style="position:relative; z-index:1; color:{COR_TEXTO_CLARO};">{conteudo}</div></div>'
+    )
+
+
+def _rotulo_tile(texto):
+    return (
+        '<div style="color:rgba(255,255,255,0.55); font-weight:700; font-size:11px; '
+        'text-transform:uppercase; letter-spacing:0.8px; margin-bottom:10px;">'
+        f"{html.escape(texto)}</div>"
+    )
+
+
+def _orbe(texto, sub, quente=False):
+    """Esfera brilhante central do painel (o elemento hero da referencia
+    visual): gradiente radial simulando volume + halo de luz da cor do estado.
+    """
+    if quente:
+        grad = "radial-gradient(circle at 32% 28%, #FCA5A5 0%, #EF4444 55%, #7F1D1D 100%)"
+        brilho = "rgba(239,68,68,0.5)"
+    else:
+        grad = "radial-gradient(circle at 32% 28%, #FFD9A0 0%, #FF9E2C 48%, #D96700 80%, #8A4300 100%)"
+        brilho = "rgba(255,138,0,0.5)"
+    return (
+        f'<div style="width:150px; height:150px; border-radius:50%; margin:10px auto 14px; '
+        f"background:{grad}; box-shadow:0 0 70px {brilho}, 0 24px 48px rgba(0,0,0,0.45), "
+        f'inset -10px -14px 34px rgba(0,0,0,0.30); display:flex; align-items:center; '
+        f'justify-content:center;">'
+        f'<div style="text-align:center; color:#fff; text-shadow:0 2px 10px rgba(0,0,0,0.35);">'
+        f'<div style="font-size:36px; font-weight:800; line-height:1;">{texto}</div>'
+        f'<div style="font-size:10px; letter-spacing:1px; opacity:0.85; text-transform:uppercase; '
+        f'margin-top:4px;">{sub}</div></div></div>'
+    )
+
+
+def _texto_gradiente(texto_html, cor, tamanho=32, peso=800):
+    inicio, fim = _GRADIENTES.get(cor, (cor, cor))
+    return (
+        f'<span style="font-size:{tamanho}px; font-weight:{peso}; '
+        f'background:linear-gradient(90deg, {inicio}, {fim}); '
+        f'-webkit-background-clip:text; background-clip:text; '
+        f'-webkit-text-fill-color:transparent; display:inline-block;">{texto_html}</span>'
+    )
+
+
+def _anel_svg(fatias, tamanho=140, espessura=16, cor_vazio="rgba(255,255,255,0.10)"):
+    """Anel em SVG (stroke-dasharray por fatia). fatias: lista de (percentual, cor).
+    Um unico item preenche o anel inteiro ate o percentual (gauge); varios itens
+    dividem o anel em segmentos lado a lado (donut). Cada fatia usa gradiente
+    de verdade (nao cor solida), definido em _GRADIENTES.
+    """
+    raio = (tamanho - espessura) / 2
+    centro = tamanho / 2
+    circunferencia = 2 * 3.14159265 * raio
+    defs = []
+    partes = [
+        f'<circle cx="{centro}" cy="{centro}" r="{raio}" fill="none" '
+        f'stroke="{cor_vazio}" stroke-width="{espessura}" />'
+    ]
+    offset = 0.0
+    for percentual, cor in fatias:
+        if percentual <= 0:
+            continue
+        inicio, fim = _GRADIENTES.get(cor, (cor, cor))
+        gid = f"anel{next(_contador_gradiente)}"
+        defs.append(
+            f'<linearGradient id="{gid}" x1="0%" y1="0%" x2="100%" y2="100%">'
+            f'<stop offset="0%" stop-color="{inicio}" /><stop offset="100%" stop-color="{fim}" />'
+            f"</linearGradient>"
+        )
+        comprimento = circunferencia * min(percentual, 1.0)
+        partes.append(
+            f'<circle cx="{centro}" cy="{centro}" r="{raio}" fill="none" '
+            f'stroke="url(#{gid})" stroke-width="{espessura}" stroke-linecap="round" '
+            f'stroke-dasharray="{comprimento:.1f} {circunferencia - comprimento:.1f}" '
+            f'stroke-dashoffset="{-offset:.1f}" '
+            f'transform="rotate(-90 {centro} {centro})" />'
+        )
+        offset += comprimento
+    defs_html = f"<defs>{''.join(defs)}</defs>" if defs else ""
+    return f'<svg width="{tamanho}" height="{tamanho}" viewBox="0 0 {tamanho} {tamanho}">{defs_html}' + "".join(partes) + "</svg>"
+
+
+def _anel_com_texto(fatias, texto_central, legenda_central, tamanho=140, espessura=16, tamanho_fonte=22):
+    anel = _anel_svg(fatias, tamanho=tamanho, espessura=espessura)
+    return (
+        f'<div style="position:relative; width:{tamanho}px; height:{tamanho}px; flex-shrink:0; '
+        f'margin:0 auto;">'
+        f"{anel}"
+        f'<div style="position:absolute; inset:0; display:flex; flex-direction:column; '
+        f'align-items:center; justify-content:center; text-align:center;">'
+        f'<div style="font-size:{tamanho_fonte}px; font-weight:800; color:{COR_TEXTO_CLARO};">{texto_central}</div>'
+        f'<div style="font-size:10px; opacity:0.6; text-transform:uppercase; letter-spacing:0.4px;">{legenda_central}</div>'
+        f"</div></div>"
+    )
+
+
+def _grafico_barras(dias, cor, altura=110):
+    """Barras de gasto por dia do mes, em SVG com gradiente. Dias sem gasto
+    aparecem como um toco apagado, pra regua do mes inteiro ficar visivel
+    (mesma linguagem do grafico grande da referencia visual).
+    """
+    n = len(dias) or 1
+    maior = max(dias) or 1.0
+    largura = 520
+    passo = largura / n
+    lbarra = passo * 0.58
+    inicio, fim = _GRADIENTES.get(cor, (cor, cor))
+    gid = f"barras{next(_contador_gradiente)}"
+    barras = []
+    for i, v in enumerate(dias):
+        if v > 0:
+            h = max(8.0, v / maior * (altura - 12))
+            opacidade = "1"
+        else:
+            h = 4.0
+            opacidade = "0.22"
+        x = i * passo + (passo - lbarra) / 2
+        barras.append(
+            f'<rect x="{x:.1f}" y="{altura - h:.1f}" width="{lbarra:.1f}" height="{h:.1f}" '
+            f'rx="2" fill="url(#{gid})" opacity="{opacidade}"/>'
+        )
+    return (
+        f'<svg viewBox="0 0 {largura} {altura}" preserveAspectRatio="none" '
+        f'style="width:100%; height:{altura}px; display:block; margin-top:12px;">'
+        f'<defs><linearGradient id="{gid}" x1="0" y1="1" x2="0" y2="0">'
+        f'<stop offset="0%" stop-color="{inicio}"/><stop offset="100%" stop-color="{fim}"/>'
+        f"</linearGradient></defs>" + "".join(barras) + "</svg>"
+    )
+
+
+def _tile_termometro(term):
+    rotulo = _rotulo_tile("Termômetro do mês")
+    if not term["limite_definido"]:
+        corpo = (
+            f"<div>{_texto_gradiente(_reais(term['gasto_mes']), COR_LARANJA, tamanho=30)}</div>"
+            '<div style="opacity:0.65; font-size:12px; margin-top:8px;">Ainda não sei seu limite '
+            'mensal. Me conta na conversa ("meu limite é 2000") que eu acompanho aqui.</div>'
+        )
+        return _tile(4, rotulo + corpo, accent=COR_LARANJA)
+    pct = round(term["percentual"] * 100)
+    orbe = _orbe(f"{pct}%", "do limite", quente=term["estourou"])
+    rodape = (
+        f'<div style="text-align:center; font-size:13px;">'
+        f'<b>{_reais(term["gasto_mes"])}</b> <span style="opacity:0.55;">de {_reais(term["limite"])}</span></div>'
+    )
+    if term["estourou"]:
+        rodape += (
+            '<div style="text-align:center; color:#FCA5A5; font-size:12px; margin-top:4px;">'
+            "Passou do limite esse mês.</div>"
+        )
+    return _tile(4, rotulo + orbe + rodape, accent=(COR_VERMELHO if term["estourou"] else COR_LARANJA))
+
+
+def _tile_grafico(gd, term):
+    rotulo = _rotulo_tile("Gasto ao longo do mês")
+    cabeca = (
+        f"<div>{_texto_gradiente(_reais(term['gasto_mes']), COR_LARANJA, tamanho=30)}"
+        f'<span style="opacity:0.6; font-size:12px; margin-left:12px;">'
+        f'{term["dias_restantes"]} dias restantes no mês</span></div>'
+    )
+    grafico = _grafico_barras(gd["dias"], COR_LARANJA)
+    regua = (
+        '<div style="display:flex; justify-content:space-between; font-size:10px; '
+        'opacity:0.45; margin-top:6px;">'
+        f'<span>dia 1</span><span>hoje: dia {gd["dia_hoje"]}</span><span>dia {len(gd["dias"])}</span></div>'
+    )
+    return _tile(8, rotulo + cabeca + grafico + regua, accent=COR_LARANJA)
+
+
+_NOMES_CATEGORIA = {
+    "necessidade": "Necessidade",
+    "desejo": "Desejo",
+    "impulso": "Impulso",
+    "mercado": "Mercado",
+}
+_CORES_CATEGORIA = {
+    "necessidade": COR_AZUL_INFO,
+    "desejo": COR_LARANJA,
+    "impulso": COR_VERMELHO,
+    "mercado": COR_VERDE,
+}
+
+
+def _tile_donut(dados):
+    rotulo = _rotulo_tile("De onde veio o gasto")
+    if not dados["tem_dado"]:
+        corpo = '<div style="opacity:0.6; font-size:13px;">Ainda não tenho compra registrada esse mês.</div>'
+        return _tile(4, rotulo + corpo, accent=COR_AZUL_INFO)
+
+    fatias_com_valor = [f for f in dados["fatias"] if f["valor"] > 0]
+    donut = _anel_com_texto(
+        [(f["percentual"], _CORES_CATEGORIA[f["categoria"]]) for f in fatias_com_valor],
+        _reais(dados["total"]),
+        "no mês",
+        tamanho=104,
+        espessura=16,
+        tamanho_fonte=14,
+    )
+    legenda = "".join(
+        f'<div style="display:flex; justify-content:space-between; gap:10px; padding:3px 0; font-size:12px;">'
+        f'<span><span style="color:{_CORES_CATEGORIA[f["categoria"]]};">●</span> '
+        f'{_NOMES_CATEGORIA[f["categoria"]]}</span>'
+        f'<span style="opacity:0.8;">{round(f["percentual"] * 100)}%</span></div>'
+        for f in fatias_com_valor
+    )
+    corpo = donut + f'<div style="margin-top:12px;">{legenda}</div>'
+    return _tile(4, rotulo + corpo, accent=COR_AZUL_INFO)
+
+
+def _tile_segurado(dados):
+    rotulo = _rotulo_tile("Dinheiro que o Guardião segurou")
+    if not dados["tem_dado"]:
+        corpo = (
+            '<div style="opacity:0.6; font-size:13px;">Ainda não tenho comparação de preço em '
+            "nenhuma compra sua. Quando você citar uma cotação antes de comprar, eu registro e "
+            "mostro aqui quanto você poupou.</div>"
+        )
+        return _tile(8, rotulo + corpo, accent=COR_VERDE)
+
+    itens_html = "".join(
+        f'<div style="display:flex; justify-content:space-between; gap:10px; padding:3px 0; '
+        f'font-size:12px; opacity:0.85; border-bottom:1px solid rgba(255,255,255,0.06);">'
+        f'<span>{html.escape(str(i["item"]))}</span><span>{_reais(i["economia"])}</span></div>'
+        for i in dados["itens"][:4]
+    )
+    corpo = (
+        '<div style="display:flex; align-items:center; gap:28px; flex-wrap:wrap;">'
+        f"<div>{_texto_gradiente(_reais(dados['total']), COR_VERDE, tamanho=40)}"
+        '<div style="opacity:0.6; font-size:12px;">economizados comparando preço antes de comprar</div></div>'
+        f'<div style="flex:1; min-width:170px;">{itens_html}</div></div>'
+    )
+    return _tile(8, rotulo + corpo, accent=COR_VERDE)
+
+
+def _barra_mini(percentual, cor):
+    return (
+        '<div style="background:rgba(255,255,255,0.10); border-radius:6px; height:7px; '
+        'margin-top:10px; overflow:hidden;">'
+        f'<div style="background:{cor}; width:{min(percentual * 100, 100):.0f}%; height:100%;"></div>'
+        "</div>"
+    )
+
+
+_CORES_PADRAO = {
+    "impulso": COR_VERMELHO,
+    "abandono": COR_AMARELO,
+    "parcelas": COR_LARANJA,
+    "cruzamento": COR_VERMELHO,
+    "recorrencia": COR_AZUL_INFO,
+    "cacador": COR_VERDE,
+}
+
+# Legenda curta dentro/abaixo dos mini-medidores radiais dos padroes de %.
+_SUB_RADIAL = {"impulso": "das compras", "abandono": "das avaliadas", "cruzamento": "dos impulsos"}
+_LEGENDA_RADIAL = {
+    "impulso": "{q} de {t} compras foram por impulso",
+    "abandono": "{q} de {t} avaliadas sem uso ou arrependidas",
+    "cruzamento": "{q} de {t} impulsos deram errado",
+}
+
+
+def _tile_padrao_html(p, span):
+    chave = p["chave"]
+    cor = _CORES_PADRAO.get(chave, COR_LARANJA)
+    rotulo = _rotulo_tile(p["titulo"])
+
+    if not p.get("pronto"):
+        minimo = p.get("minimo")
+        progresso = p.get("progresso", 0)
+        if minimo:
+            # O anel cinza mostra quantos dados ja tem (2/3, 1/5...). Sem a
+            # palavra "desbloquear": o padrao pode ser uma noticia ruim (voce
+            # compra por impulso, voce se arrepende direto), entao soaria como
+            # premio abrir ele. E so uma questao de nao ter dado suficiente
+            # ainda pra falar com confianca, nada de conquista.
+            anel = _anel_com_texto(
+                [(progresso / minimo, "rgba(255,255,255,0.35)")],
+                f"{progresso}/{minimo}",
+                "dados",
+                tamanho=92,
+                espessura=10,
+                tamanho_fonte=18,
+            )
+            corpo = anel + (
+                '<div style="text-align:center; opacity:0.5; font-size:11px; margin-top:8px;">'
+                "Ainda não tenho dado suficiente aqui.</div>"
+            )
+        elif chave == "parcelas":
+            corpo = '<div style="opacity:0.55; font-size:13px;">Nenhuma parcela em aberto no momento.</div>'
+        else:
+            corpo = '<div style="opacity:0.55; font-size:13px;">Ainda não tenho dado suficiente aqui.</div>'
+        return _tile(span, rotulo + corpo)
+
+    if chave in ("impulso", "abandono", "cruzamento"):
+        anel = _anel_com_texto(
+            [(p["percentual"], cor)],
+            f"{round(p['percentual'] * 100)}%",
+            _SUB_RADIAL[chave],
+            tamanho=92,
+            espessura=10,
+            tamanho_fonte=22,
+        )
+        legenda = _LEGENDA_RADIAL[chave].format(q=p["quantidade"], t=p["total"])
+        corpo = anel + (
+            f'<div style="text-align:center; opacity:0.6; font-size:11px; margin-top:8px;">{legenda}</div>'
+        )
+        return _tile(span, rotulo + corpo, accent=cor)
+
+    if chave == "cacador":
+        plural = "item" if p["quantidade_itens"] == 1 else "itens"
+        corpo = (
+            f"<div>{_texto_gradiente(_reais(p['total_economizado']), COR_VERDE, tamanho=28)}</div>"
+            f'<div style="opacity:0.65; font-size:12px; margin-top:6px;">'
+            f'comparando preço, em {p["quantidade_itens"]} {plural}</div>'
+        )
+        return _tile(span, rotulo + corpo, accent=COR_VERDE)
+
+    if chave == "parcelas":
+        ativas = p["parcelas_ativas"]
+        sub = (
+            html.escape(str(ativas[0]["item"]))
+            if len(ativas) == 1
+            else f"{len(ativas)} parcelamentos ativos"
+        )
+        corpo = (
+            f"<div>{_texto_gradiente(_reais(p['compromisso_mensal']) + '/mês', COR_LARANJA, tamanho=26)}</div>"
+            f'<div style="opacity:0.65; font-size:12px; margin:4px 0 8px;">{sub}</div>'
+        )
+        if p["percentual_do_limite"]:
+            corpo += _barra_mini(p["percentual_do_limite"], cor)
+            corpo += (
+                f'<div style="opacity:0.55; font-size:11px; margin-top:6px;">'
+                f'{round(p["percentual_do_limite"] * 100)}% do seu limite mensal já comprometido</div>'
+            )
+        return _tile(span, rotulo + corpo, accent=cor)
+
+    if chave == "recorrencia":
+        item = p["itens"][0]
+        extra = (
+            f' <span style="opacity:0.5;">+{len(p["itens"]) - 1}</span>' if len(p["itens"]) > 1 else ""
+        )
+        seta = " · comprando com mais frequência" if item["intervalo_encurtando"] else ""
+        corpo = (
+            f'<div style="font-size:22px; font-weight:800;">{_reais(item["preco_inicial"])} '
+            f'<span style="color:{COR_LARANJA};">→</span> {_reais(item["preco_atual"])}</div>'
+            f'<div style="opacity:0.65; font-size:12px; margin-top:6px;">'
+            f'{html.escape(str(item["item"]))}{extra}{seta}</div>'
+        )
+        return _tile(span, rotulo + corpo, accent=cor)
+
+    return _tile(span, rotulo)
+
+
+def _tela_painel(usuario_id):
+    """Tela do painel financeiro (Fase 2 do roadmap, ver PROJETO.md secao 9).
+    Troca a tela principal por inteiro, sem mexer no fluxo de conversa: quem
+    volta pro chat encontra tudo exatamente como deixou.
+
+    O painel e UM bloco HTML com CSS grid de 12 colunas (mosaico bento,
+    seguindo a referencia visual da fundadora): orbe hero + grafico grande
+    na linha 1, donut + numero de prova de valor na linha 2, e os padroes
+    como tiles densos com mini-medidores radiais.
+    """
+    _cabecalho_logo()
+    if st.button("← Voltar pro chat"):
+        st.session_state.tela = "chat"
+        st.rerun()
+
+    dados = painel.montar_painel(mem.ler_memoria(usuario_id))
+    padroes = {p["chave"]: p for p in dados["padroes"]}
+
+    tiles = [
+        _tile_termometro(dados["termometro"]),
+        _tile_grafico(dados["gasto_diario"], dados["termometro"]),
+        _tile_donut(dados["origem_gasto"]),
+        _tile_segurado(dados["dinheiro_segurado"]),
+        '<div class="gsec">Padrões de consumo</div>',
+        _tile_padrao_html(padroes["impulso"], 3),
+        _tile_padrao_html(padroes["abandono"], 3),
+        _tile_padrao_html(padroes["cruzamento"], 3),
+        _tile_padrao_html(padroes["cacador"], 3),
+        _tile_padrao_html(padroes["parcelas"], 6),
+        _tile_padrao_html(padroes["recorrencia"], 6),
+    ]
+    st.markdown(
+        _CSS_PAINEL
+        + '<div style="font-size:26px; font-weight:800; margin:6px 0 14px; '
+        f'color:{COR_TEXTO_CLARO};">Meu painel</div>'
+        + f'<div class="gpainel">{"".join(tiles)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def tela_do_chat():
@@ -884,6 +1363,17 @@ def _tela_perfil_rapido(usuario_id):
         placeholder="algum limite ou situação sua",
     )
 
+    st.markdown("#### Tem um limite de gasto mensal? (opcional)")
+    st.caption("Pode deixar em branco e me contar depois, numa conversa.")
+    limite_mensal = st.number_input(
+        "Limite mensal em reais",
+        key="limite_mensal",
+        min_value=0.0,
+        step=50.0,
+        format="%.2f",
+        label_visibility="collapsed",
+    )
+
     st.write("")
     if st.button("Começar", type="primary"):
         # Monta a prioridade a partir das opcoes marcadas. A opcao de objetivo,
@@ -910,6 +1400,8 @@ def _tela_perfil_rapido(usuario_id):
         memoria.setdefault("perfil", {})
         memoria["perfil"]["prioridade"] = prioridade
         memoria["perfil"]["guardrails"] = guardrails
+        if limite_mensal and limite_mensal > 0:
+            memoria["perfil"]["limite_mensal"] = float(limite_mensal)
         mem.salvar_memoria(usuario_id, memoria)
         st.rerun()
 
@@ -937,5 +1429,7 @@ else:
     _memoria_atual = mem.ler_memoria(st.session_state.usuario_id)
     if _perfil_incompleto(_memoria_atual):
         _tela_perfil_rapido(st.session_state.usuario_id)
+    elif st.session_state.get("tela") == "painel":
+        _tela_painel(st.session_state.usuario_id)
     else:
         tela_do_chat()

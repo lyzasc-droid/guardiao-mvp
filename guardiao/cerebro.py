@@ -41,8 +41,11 @@ FERRAMENTA_MEMORIA = {
         "INTEIRO ja atualizado (perfil, necessidades, desejos, compras, analises, "
         "lista_mercado, precos), mantendo o que ja existia e acrescentando o novo. "
         "Use sempre que aprender algo duravel: uma prioridade, uma necessidade, um "
-        "desejo, uma compra feita, ou o veredito que voce deu. Para lista de "
-        "mercado use atualizar_lista_mercado; para precos use registrar_preco."
+        "desejo, ou o veredito que voce deu. Para lista de mercado use "
+        "atualizar_lista_mercado; para precos e compras de item especifico use "
+        "registrar_preco; para gasto total avulso de mercado use "
+        "registrar_gasto_mercado; para limite mensal use definir_limite_mensal; "
+        "para resultado de compra use registrar_resultado_compra."
     ),
     "input_schema": {
         "type": "object",
@@ -151,8 +154,94 @@ FERRAMENTA_PRECO = {
                     "que a pessoa disse, nunca pergunte so pra preencher isso."
                 ),
             },
+            "forma_pagamento": {
+                "type": "string",
+                "enum": ["vista", "parcelado"],
+                "description": (
+                    "Somente para acao 'pago'. Preencha so quando a pessoa mencionar "
+                    "explicitamente (ex: '3x no cartao', 'a vista', 'parcelei'). "
+                    "Omita se ela nao disse, nunca pergunte so pra preencher isso."
+                ),
+            },
+            "parcelas": {
+                "type": "integer",
+                "description": "Numero de parcelas, so quando forma_pagamento for 'parcelado' e ela disse o numero.",
+            },
         },
         "required": ["acao", "item", "preco"],
+    },
+}
+
+FERRAMENTA_LIMITE = {
+    "name": "definir_limite_mensal",
+    "description": (
+        "Grava ou atualiza o limite de gasto mensal da pessoa, em reais. Use "
+        "quando ela disser um valor de limite/orcamento mensal (ex: 'meu "
+        "limite e 2500', 'quero gastar no maximo 800 por mes'). Nunca invente "
+        "o valor, so registre o que ela disse explicitamente."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "valor": {
+                "type": "number",
+                "description": "Limite mensal em reais.",
+            },
+        },
+        "required": ["valor"],
+    },
+}
+
+FERRAMENTA_GASTO_MERCADO = {
+    "name": "registrar_gasto_mercado",
+    "description": (
+        "Registra um gasto TOTAL e avulso de mercado, quando a pessoa diz quanto "
+        "gastou na ida ao mercado sem discriminar item por item (ex: 'gastei 80 "
+        "no mercado hoje', 'deixei 150 no supermercado'). Diferente de "
+        "registrar_preco: aqui NAO ha um item especifico, e o gasto do passeio "
+        "inteiro. Nao use para o preco de um item individual (isso e "
+        "registrar_preco) nem para itens da lista de mercado sem valor "
+        "mencionado (isso e atualizar_lista_mercado)."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "valor": {
+                "type": "number",
+                "description": "Valor total gasto no mercado, em reais.",
+            },
+            "local": {
+                "type": "string",
+                "description": "Onde foi, se ela disse (mercado, supermercado, feira). Omitir se nao souber.",
+            },
+        },
+        "required": ["valor"],
+    },
+}
+
+FERRAMENTA_RESULTADO = {
+    "name": "registrar_resultado_compra",
+    "description": (
+        "Registra o resultado de uma compra ja feita, depois que a pessoa "
+        "responde a pergunta de follow-up ('ficou satisfeita?', 'ainda usa "
+        "aquilo?'). Use resultado 'valeu' quando ela confirma que gostou/usa, "
+        "'arrependimento' quando ela se arrependeu ou nao valeu a pena, "
+        "'nao_uso' quando ela comprou mas nao chegou a usar. So chame depois "
+        "que ela responder de verdade sobre uma compra especifica."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "item": {
+                "type": "string",
+                "description": "Nome do item comprado (bate com o que esta em compras na memoria).",
+            },
+            "resultado": {
+                "type": "string",
+                "enum": ["valeu", "arrependimento", "nao_uso"],
+            },
+        },
+        "required": ["item", "resultado"],
     },
 }
 
@@ -210,9 +299,15 @@ def _aplicar_registrar_preco(usuario_id, entrada):
         # Compra fecha o ciclo do item: sai de necessidades/desejos (as
         # cotacoes ja cumpriram o papel) e entra em compras. Tudo numa
         # chamada so, sem depender do modelo reescrever o documento inteiro.
+        # A lista de origem vira a categoria da compra (necessidade/desejo);
+        # se o item nunca tinha passado pelo crivo antes, e impulso: a pessoa
+        # chegou direto dizendo "comprei", sem cogitar antes.
         chave = item.lower()
         movido = None
-        for lista in ("necessidades", "desejos"):
+        categoria = "impulso"
+        gatilho = None
+        cotacoes = None
+        for lista, cat in (("necessidades", "necessidade"), ("desejos", "desejo")):
             itens = doc.get(lista, [])
             for registro in list(itens):
                 nome = str(registro.get("item", "") if isinstance(registro, dict) else registro)
@@ -220,14 +315,41 @@ def _aplicar_registrar_preco(usuario_id, entrada):
                 if chave == n or chave in n or n in chave:
                     itens.remove(registro)
                     movido = nome
+                    categoria = cat
+                    if isinstance(registro, dict):
+                        gatilho = registro.get("gatilho")
+                        cotacoes = registro.get("cotacoes")
                     break
             if movido:
                 break
-        doc.setdefault("compras", []).append(
-            {"item": movido or item, "preco": preco, "local": local, "data": hoje}
-        )
+
+        forma_pagamento = entrada.get("forma_pagamento")
+        compra = {
+            "item": movido or item,
+            "preco": preco,
+            "local": local,
+            "data": hoje,
+            "categoria": categoria,
+            "resultado": None,
+        }
+        if forma_pagamento in ("vista", "parcelado"):
+            compra["forma_pagamento"] = forma_pagamento
+            if forma_pagamento == "parcelado":
+                try:
+                    compra["parcelas"] = int(entrada.get("parcelas") or 0) or None
+                except (TypeError, ValueError):
+                    pass
+        if gatilho:
+            compra["gatilho"] = gatilho
+        # Preserva as cotacoes que o item tinha antes da compra (o dinheiro
+        # que o Guardiao "segurou" no painel se calcula em cima disso). Sem
+        # isso, a cotacao morria junto com o item removido de necessidades/
+        # desejos e o item comprado nunca mais tinha como provar economia.
+        if cotacoes:
+            compra["cotacoes"] = cotacoes
+        doc.setdefault("compras", []).append(compra)
         mem.salvar_memoria(usuario_id, doc)
-        extra = f" Item '{movido}' movido de necessidades/desejos para compras." if movido else ""
+        extra = f" Item '{movido}' movido de necessidades/desejos para compras." if movido else " Registrado direto como impulso (nao tinha passado pelo crivo antes)."
         return (
             f"preco pago registrado: {item} {_formatar_reais(preco)}{onde}."
             + contexto
@@ -268,6 +390,71 @@ def _aplicar_registrar_preco(usuario_id, entrada):
         f"cotacao registrada em '{alvo['item']}': {_formatar_reais(preco)}{onde}."
         + contexto
     )
+
+
+def _aplicar_definir_limite(usuario_id, entrada):
+    """Executa definir_limite_mensal: grava o valor em perfil.limite_mensal."""
+    try:
+        valor = float(entrada.get("valor"))
+    except (TypeError, ValueError):
+        return None
+    if valor <= 0:
+        return None
+    doc = mem.ler_memoria(usuario_id)
+    doc.setdefault("perfil", {})["limite_mensal"] = valor
+    mem.salvar_memoria(usuario_id, doc)
+    return f"limite mensal registrado: {_formatar_reais(valor)}"
+
+
+def _aplicar_registrar_gasto_mercado(usuario_id, entrada):
+    """Executa registrar_gasto_mercado: grava um gasto avulso de mercado direto
+    em compras, com categoria "mercado" e sem vincular a nenhum item da lista
+    (o gasto e do passeio inteiro, nao de um produto especifico).
+    """
+    try:
+        valor = float(entrada.get("valor"))
+    except (TypeError, ValueError):
+        return None
+    if valor <= 0:
+        return None
+    local = (entrada.get("local") or "").strip()
+    doc = mem.ler_memoria(usuario_id)
+    doc.setdefault("compras", []).append(
+        {
+            "item": "mercado",
+            "preco": valor,
+            "local": local,
+            "data": datetime.date.today().isoformat(),
+            "categoria": "mercado",
+            "resultado": None,
+        }
+    )
+    mem.salvar_memoria(usuario_id, doc)
+    return f"gasto de mercado registrado: {_formatar_reais(valor)}"
+
+
+def _aplicar_registrar_resultado(usuario_id, entrada):
+    """Executa registrar_resultado_compra: encontra a compra mais recente que
+    bate com o item e marca o resultado (valeu/arrependimento/nao_uso).
+    """
+    item = (entrada.get("item") or "").strip()
+    resultado = entrada.get("resultado")
+    if not item or resultado not in ("valeu", "arrependimento", "nao_uso"):
+        return None
+    doc = mem.ler_memoria(usuario_id)
+    chave = item.lower()
+    alvo = None
+    for registro in doc.get("compras", []):
+        if not isinstance(registro, dict):
+            continue
+        nome = str(registro.get("item", "")).lower()
+        if chave == nome or chave in nome or nome in chave:
+            alvo = registro  # lista cronologica: o ultimo casamento vence (compra mais recente)
+    if alvo is None:
+        return None
+    alvo["resultado"] = resultado
+    mem.salvar_memoria(usuario_id, doc)
+    return f"resultado registrado em '{alvo['item']}': {resultado}"
 
 
 def _parece_bem_duravel(item):
@@ -387,7 +574,14 @@ def responder(usuario_id, modelo=None, desde_id=0):
             # a resposta no meio antes de terminar.
             max_tokens=2000,
             system=system,
-            tools=[FERRAMENTA_MEMORIA, FERRAMENTA_LISTA_MERCADO, FERRAMENTA_PRECO],
+            tools=[
+                FERRAMENTA_MEMORIA,
+                FERRAMENTA_LISTA_MERCADO,
+                FERRAMENTA_PRECO,
+                FERRAMENTA_LIMITE,
+                FERRAMENTA_GASTO_MERCADO,
+                FERRAMENTA_RESULTADO,
+            ],
             messages=mensagens,
         )
 
@@ -428,6 +622,42 @@ def responder(usuario_id, modelo=None, desde_id=0):
                         "type": "tool_result",
                         "tool_use_id": bloco.id,
                         "content": resultado if ok else "entrada invalida (item, preco > 0 e acao pago/cotacao sao obrigatorios)",
+                        "is_error": not ok,
+                    }
+                )
+            elif bloco.name == "definir_limite_mensal":
+                resultado = _aplicar_definir_limite(usuario_id, bloco.input)
+                ok = resultado is not None
+                salvou_memoria = salvou_memoria or ok
+                resultados.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": bloco.id,
+                        "content": resultado if ok else "valor invalido",
+                        "is_error": not ok,
+                    }
+                )
+            elif bloco.name == "registrar_gasto_mercado":
+                resultado = _aplicar_registrar_gasto_mercado(usuario_id, bloco.input)
+                ok = resultado is not None
+                salvou_memoria = salvou_memoria or ok
+                resultados.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": bloco.id,
+                        "content": resultado if ok else "valor invalido",
+                        "is_error": not ok,
+                    }
+                )
+            elif bloco.name == "registrar_resultado_compra":
+                resultado = _aplicar_registrar_resultado(usuario_id, bloco.input)
+                ok = resultado is not None
+                salvou_memoria = salvou_memoria or ok
+                resultados.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": bloco.id,
+                        "content": resultado if ok else "nao achei compra com esse item",
                         "is_error": not ok,
                     }
                 )
