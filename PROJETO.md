@@ -2,7 +2,7 @@
 
 > Cérebro do projeto. Fonte única de verdade sobre o Guardião.
 > Este arquivo é lido no início de cada sessão e atualizado ao fim dela.
-> Última atualização: 2026-07-14 (Fase 2 do painel enviada pro GitHub, redeploy automático em andamento no Streamlit Cloud).
+> Última atualização: 2026-07-15 (redesign da tela de abertura enviado pro GitHub, redeploy automático em andamento no Streamlit Cloud).
 
 ---
 
@@ -242,5 +242,6 @@ Detalhes completos em `benchmark/benchmark-concorrentes.md`. Resumo:
 
 - 2026-07-09: enviado pro GitHub (commit `653012c`, branch `main`) tudo desta sessão: logo negativa, avatares do chat, lista de mercado e o critério de categorias. Streamlit Community Cloud redeploy automático a partir do push.
 - 2026-07-10: **memória migrada do SQLite local pro Supabase** (Postgres), resolvendo a limitação de banco efêmero anotada desde o deploy (07/07). Código enviado (commit `6cccd36`), `DATABASE_URL` configurada nos Secrets do Streamlit Cloud, `ModuleNotFoundError` inicial corrigido com reboot manual, confirmado funcionando em produção. Detalhes completos na seção 9.
+- 2026-07-15: enviado pro GitHub (commit `41b2cbb`, branch `main`) o redesign da tela de abertura (botão do painel, correção do vazio no mobile, logo enxuta, pergunta como protagonista, favicon) e o script `criar_dados_demo.py`. Streamlit Community Cloud redeploy automático a partir do push. Ainda não confirmado visualmente em produção nesta rodada — só testado local.
 - Decidir com a fundadora se aplica o resto do Design System agora (tipografia Sora/Manrope, selo de veredito nomeado nos cartões, correção do hex do azul de informação) ou deixa pra depois.
 - Adicionar login de verdade (privacidade por pessoa, hoje é só um nome na URL sem senha). Depois disso, considerar reconstruir front em Next.js se quiser rodar na Vercel.
