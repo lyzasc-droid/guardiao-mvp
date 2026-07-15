@@ -210,7 +210,11 @@ def _icone_iagilize_animado():
 load_dotenv()  # carrega ANTHROPIC_API_KEY e GUARDIAO_MODELO do .env, se existir
 mem.iniciar_banco()
 
-st.set_page_config(page_title="Guardião", page_icon="🛡️", layout="centered")
+st.set_page_config(
+    page_title="Guardião",
+    page_icon=str(CAMINHO_ASSETS / "icone.png"),
+    layout="centered",
+)
 _injetar_estilo_global()
 
 # Teto de uso por dia (controla o custo por pessoa). Ajustavel no .env.
@@ -735,15 +739,79 @@ def _tela_boas_vindas(usuario_id, desde_id):
     (A esfera azul e os blocos animados do logo, versoes anteriores desta tela,
     seguem guardados nos assets caso a fundadora queira retomar.)
     """
+    # Centralizacao de verdade, nao "padding-top: 20vh" chutado: esse chute
+    # calculava a partir da tela inteira, ignorando que a barra de digitar
+    # fica fixa embaixo. Em celular (tela alta e estreita) sobrava um vao
+    # gigante vazio entre a pergunta e a barra. Aqui o proprio container
+    # principal do Streamlit (stMainBlockContainer) vira flex e cresce
+    # (flex:1) pra preencher exatamente o espaco que sobra entre o topo e a
+    # barra fixa, e so entao centraliza o conteudo dentro desse espaco real.
+    # So se aplica nesta tela porque o <style> so existe enquanto esta
+    # funcao roda (Streamlit remonta o DOM a cada tela).
+    # O Streamlit tambem injeta um spacer proprio (uma div sem testid, irma
+    # do bloco principal) que competia pelo mesmo espaco flexivel e sobrava
+    # com a maior parte dele. Zerado aqui pra sobrar tudo pro nosso bloco.
+    # (O stVerticalBlock de dentro tambem e flex:1 por padrao do proprio
+    # Streamlit e preenche o container inteiro, entao o justify-content que
+    # de fato centraliza o conteudo tem que ir nele, nao so no pai.)
+    st.markdown(
+        '<style>[data-testid="stMainBlockContainer"]{'
+        "display:flex; flex-direction:column; flex:1;"
+        "}"
+        '[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"]{'
+        "justify-content:center;"
+        "}"
+        '[data-testid="stAppScrollToBottomContainer"] > div:not([data-testid]){'
+        "flex:0 0 auto !important;"
+        "}</style>",
+        unsafe_allow_html=True,
+    )
+    # So o simbolo aqui, sem o lockup completo (nome + "by IAgilize" +
+    # tracinho): numa tela sem mais nada, o lockup inteiro pesa mais que a
+    # propria pergunta, que e a acao real. A marca ja fica reforcada no
+    # cabecalho cheio (_cabecalho_logo) assim que a conversa comeca.
     conteudo = (
         '<div style="display:flex; flex-direction:column; align-items:center; '
-        'justify-content:center; padding-top:20vh;">'
-        f'{_logo_html(50, centralizado=True)}'
-        '<p style="font-size:19px; margin-top:28px; '
-        'text-align:center; max-width:280px;">O que você quer comprar hoje?</p>'
+        'justify-content:center;">'
+        f'<img src="data:image/png;base64,{_ICONE_B64}" '
+        'style="height:40px; width:auto; opacity:0.85;" />'
+        f'<p style="font-size:30px; font-weight:700; letter-spacing:-0.4px; '
+        f'line-height:1.3; margin-top:20px; color:{COR_TEXTO_CLARO}; '
+        'text-align:center; max-width:320px;">O que você quer comprar hoje?</p>'
         '</div>'
     )
     st.markdown(conteudo, unsafe_allow_html=True)
+
+    # Acesso direto ao painel ja na primeira tela: quem so quer ver os
+    # numeros nao precisa mandar mensagem antes pra barra lateral aparecer.
+    # Atalho secundario de proposito: pilula fantasma no canto superior
+    # direito, fora do caminho da acao principal (dizer o que quer comprar).
+    # Visual da pilula: vidro escuro com borda em gradiente laranja (truque
+    # dos dois backgrounds: o de dentro cobre o padding-box, o gradiente
+    # aparece so na moldura via border-box). Sem animacao: um pulso continuo
+    # e, por definicao, uma tecnica pra puxar o olho, o que brigava com o
+    # pedido de ficar secundario. O brilho fica so no hover, como resposta a
+    # interacao, nao como chamariz o tempo todo.
+    st.markdown(
+        "<style>"
+        ".st-key-painel_boas_vindas{position:fixed; top:64px; right:28px; width:auto; z-index:99;}"
+        ".st-key-painel_boas_vindas button{"
+        "background:linear-gradient(rgba(12,29,46,0.92), rgba(12,29,46,0.92)) padding-box, "
+        "linear-gradient(90deg, #FF8A00, #FFD166) border-box; "
+        "border:1px solid transparent; border-radius:999px; "
+        "padding:8px 20px; font-size:13px; font-weight:600; "
+        f"color:{COR_TEXTO_CLARO}; "
+        "box-shadow:0 0 10px rgba(255,138,0,0.18); "
+        "transition:transform 0.15s ease, box-shadow 0.15s ease;}"
+        ".st-key-painel_boas_vindas button:hover{"
+        f"color:{COR_LARANJA}; transform:translateY(-1px); "
+        "box-shadow:0 0 24px rgba(255,138,0,0.5);}"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+    if st.button("📊 Meu painel", key="painel_boas_vindas"):
+        st.session_state.tela = "painel"
+        st.rerun()
 
     _estilizar_microfone("voz_boas_vindas")
     falado = speech_to_text(
